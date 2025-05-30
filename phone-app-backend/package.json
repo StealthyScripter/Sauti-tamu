@@ -1,0 +1,50 @@
+{
+  "name": "phone-app-backend",
+  "version": "1.0.0",
+  "description": "Phone calling app backend API",
+  "main": "src/app.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/app.js",
+    "start": "node src/app.js",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest --watchAll --detectOpenHandles",
+    "test:ci": "NODE_OPTIONS='--experimental-vm-modules' jest --ci --coverage --detectOpenHandles",
+    "migrate": "node scripts/migrate.js",
+    "lint": "eslint src/",
+    "format": "prettier --write src/"
+  },
+  "dependencies": {
+    "express": "4.18.2",
+    "cors": "2.8.5",
+    "helmet": "7.0.0",
+    "morgan": "1.10.0",
+    "dotenv": "16.3.1",
+    "express-rate-limit": "6.8.1",
+    "express-validator": "7.0.1",
+    "bcryptjs": "2.4.3",
+    "jsonwebtoken": "9.0.1",
+    "winston": "3.10.0",
+    "pg": "8.11.1",
+    "redis": "4.6.7",
+    "mongodb": "5.7.0",
+    "mongoose": "7.4.0",
+    "clickhouse": "2.6.0",
+    "path-to-regexp": "6.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "3.0.1",
+    "jest": "29.6.1",
+    "supertest": "6.3.3",
+    "eslint": "8.45.0",
+    "prettier": "3.0.0"
+  },
+  "jest": {
+    "preset": "default",
+    "extensionsToTreatAsEsm": [".js"],
+    "globals": {
+      "import.meta": {}
+    },
+    "transform": {},
+    "testEnvironment": "node"
+  }
+}
