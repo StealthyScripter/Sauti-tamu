@@ -69,7 +69,7 @@ app.get('/health', (req, res) => {
 // Import and use route modules
 import authRoutes from './routes/auth.js';
 import contactRoutes from './routes/contacts.js';
-import callRoutes from './routes/calls.js';
+import callRoutes from './routes/callsManagement.js';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/contacts', contactRoutes);
