@@ -1,5 +1,5 @@
 import { ClickHouse } from 'clickhouse';
-import redis from '../config/redis.js';
+//import redis from '../config/redis.js';
 
 class CallService {
   constructor() {
@@ -9,7 +9,7 @@ class CallService {
       debug: false,
       basicAuth: null,
       isUseGzip: false,
-      format: "json",
+      format: 'json',
       raw: false,
       config: {
         session_timeout: 60,

@@ -4,15 +4,15 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+// import { fileURLToPath } from 'url';
+// import { dirname} from 'path';
 import connectMongoDB from './config/mongodb.js';
 
 // Load environment variables
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+//const __filename = fileURLToPath(import.meta.url);
+// const __dirname = dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -68,12 +68,12 @@ app.get('/health', (req, res) => {
 
 // Import and use route modules
 import authRoutes from './routes/auth.js';
-// import userRoutes from './routes/users.js';
-// import callRoutes from './routes/calls.js';
+import contactRoutes from './routes/contacts.js';
+import callRoutes from './routes/calls.js';
 
 app.use('/api/auth', authRoutes);
-// app.use('/api/users', userRoutes);
-// app.use('/api/calls', callRoutes);
+app.use('/api/contacts', contactRoutes);
+app.use('/api/calls', callRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -82,6 +82,7 @@ app.use((err, req, res, next) => {
     error: 'Something went wrong!',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
   });
+  console.log(next);
 });
 
 // 404 handler
@@ -101,7 +102,7 @@ async function startServer() {
     // Start the HTTP server
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📱 Phone App Backend API`);
+      console.log('📱 Phone App Backend API');
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`📊 Health check: http://localhost:${PORT}/health`);
     });
