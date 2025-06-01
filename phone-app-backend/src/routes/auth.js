@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { body, validationResult } from 'express-validator';
 import redis from 'redis';
 import authService from '../services/authService.js';
+import phoneVerificationService from '../services/phoneVerificationService.js';
 
 const router = express.Router();
 
@@ -31,6 +32,64 @@ const authLimiter = rateLimit({
   message: 'Too many authentication attempts'
 });
 
+// More restrictive rate limiting for verification codes
+const verificationLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 1, // 1 code per minute
+  message: 'Please wait before requesting another verification code'
+});
+
+// Send verification code
+router.post('/verify-phone',
+  verificationLimiter,
+  [
+    body('phoneNumber')
+      .custom((value) => {
+        // Remove all non-digit characters except +
+        const cleaned = value.replace(/[^\d+]/g, '');
+        // Check if it's a valid phone number format
+        if (!/^\+?[1-9]\d{6,14}$/.test(cleaned)) {
+          throw new Error('Valid phone number required (6-15 digits, optionally starting with +)');
+        }
+        return true;
+      })
+      .withMessage('Valid phone number required')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ 
+          success: false,
+          errors: errors.array() 
+        });
+      }
+
+      const { phoneNumber } = req.body;
+      const normalizedPhone = authService.normalizePhoneNumber(phoneNumber);
+      
+      const result = await phoneVerificationService.sendVerificationCode(normalizedPhone);
+      
+      res.json({
+        success: true,
+        message: result.message,
+        data: {
+          phoneNumber: normalizedPhone,
+          expiresIn: 600 // 10 minutes
+        }
+      });
+    } catch (error) {
+      console.error('Phone verification error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to send verification code',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+);
+
+// POST /api/auth/login - Updated to include code verification
 router.post('/login', 
   authLimiter,
   [
@@ -45,21 +104,40 @@ router.post('/login',
         return true;
       })
       .withMessage('Valid phone number required'),
+    body('verificationCode')
+      .isLength({ min: 6, max: 6 })
+      .isNumeric()
+      .withMessage('6-digit verification code required'),
     body('displayName').optional().isLength({ min: 1, max: 100 })
   ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
+        return res.status(400).json({ 
+          success: false,
+          errors: errors.array() 
+        });
       }
 
-      const { phoneNumber, displayName } = req.body;
+      const { phoneNumber, verificationCode, displayName } = req.body;
+      const normalizedPhone = authService.normalizePhoneNumber(phoneNumber);
       
-      let user = await authService.getUserByPhone(phoneNumber);
+      // Verify the code first
+      const verificationResult = await phoneVerificationService.verifyCode(normalizedPhone, verificationCode);
+      
+      if (!verificationResult.success) {
+        return res.status(400).json({
+          success: false,
+          message: verificationResult.message
+        });
+      }
+      
+      // Code is valid, proceed with login/registration
+      let user = await authService.getUserByPhone(normalizedPhone);
       
       if (!user) {
-        user = await authService.createUser(phoneNumber, displayName);
+        user = await authService.createUser(normalizedPhone, displayName);
       }
       
       const token = await authService.generateToken(user.id);
@@ -83,7 +161,7 @@ router.post('/login',
       res.status(500).json({
         success: false,
         message: 'Authentication failed',
-        error: error.message
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }
   }
