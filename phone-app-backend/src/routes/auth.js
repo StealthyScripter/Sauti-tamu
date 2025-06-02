@@ -3,7 +3,8 @@ import rateLimit from 'express-rate-limit';
 import { body, validationResult } from 'express-validator';
 import redis from 'redis';
 import authService from '../services/authService.js';
-import phoneVerificationService from '../services/phoneVerificationService.js';
+//import phoneVerificationService from '../services/phoneVerificationService.js';
+import phoneVerificationService from '../services/__mock__/mockverificationservice.js';
 
 const router = express.Router();
 

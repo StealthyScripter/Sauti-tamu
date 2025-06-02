@@ -97,7 +97,7 @@ class AuthService {
         throw new Error('No valid updates provided');
       }
 
-      setClause.push(`updated_at = NOW()`);
+      setClause.push('updated_at = NOW()');
       values.push(userId);
 
       const result = await pool.query(

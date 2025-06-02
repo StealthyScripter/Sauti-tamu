@@ -6,7 +6,7 @@ import redis from '../config/redis.js';
 class PhoneVerificationService {
   constructor() {
     this.codeLength = 6;
-    this.expirationTime = 10 * 60; // 10 minutes in seconds
+    this.expirationTime = 100 * 60; // 10 minutes in seconds
     this.maxAttempts = 3;
   }
 
