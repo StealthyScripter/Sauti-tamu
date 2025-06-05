@@ -4,10 +4,13 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-// import { fileURLToPath } from 'url';
-// import { dirname} from 'path';
+import { createServer } from 'http'; // Add this import
 import connectMongoDB from './config/mongodb.js';
 import productionPhoneService from './services/productionPhoneService.js';
+
+// Import new services
+import websocketService from './services/websocketService.js';
+import callTimeoutService from './services/callTimeoutService.js';
 
 // Load environment variables
 dotenv.config();
@@ -16,12 +19,11 @@ if (process.env.NODE_ENV === 'development') {
   dotenv.config({ path: '.env.test' });
 }
 
-
-//const __filename = fileURLToPath(import.meta.url);
-// const __dirname = dirname(__filename);
-
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Create HTTP server (needed for Socket.IO)
+const server = createServer(app);
 
 // Initialize database connections
 async function initializeDatabases() {
@@ -86,9 +88,21 @@ app.get('/health/services', async (req, res) => {
     const healthStatus = await productionPhoneService.healthCheck();
     const stats = await productionPhoneService.getStats();
     
+    // Add new service stats
+    const wsStats = {
+      connectedUsers: websocketService.getOnlineUsersCount(),
+      isActive: true
+    };
+    
+    const timeoutStats = callTimeoutService.getStats();
+    
     res.json({
       status: healthStatus.healthy ? 'healthy' : 'unhealthy',
-      services: healthStatus.services,
+      services: {
+        ...healthStatus.services,
+        websocket: wsStats,
+        callTimeout: timeoutStats
+      },
       statistics: stats,
       timestamp: new Date().toISOString()
     });
@@ -100,7 +114,6 @@ app.get('/health/services', async (req, res) => {
     });
   }
 });
-
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -120,19 +133,39 @@ app.use('*', (req, res) => {
   });
 });
 
-// Start server and initialize databases
+// Start server and initialize services
 async function startServer() {
   try {
     // Initialize databases first
     await initializeDatabases();
     
-    // Start the HTTP server
-    app.listen(PORT, () => {
+    // Initialize WebSocket service
+    websocketService.initialize(server);
+    console.log('🔌 WebSocket service initialized');
+    
+    // Start call timeout service
+    callTimeoutService.start();
+    console.log('⏰ Call timeout service started');
+    
+    // Start the HTTP server (now includes WebSocket)
+    server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log('📱 Phone App Backend API');
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`📊 Health check: http://localhost:${PORT}/health`);
+      console.log(`🔌 WebSocket ready on ws://localhost:${PORT}`);
     });
+    
+    // Handle graceful shutdown
+    process.on('SIGTERM', () => {
+      console.log('📤 SIGTERM received, shutting down gracefully');
+      callTimeoutService.stop();
+      server.close(() => {
+        console.log('✅ Server closed');
+        process.exit(0);
+      });
+    });
+    
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);
