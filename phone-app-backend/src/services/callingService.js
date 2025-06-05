@@ -2,6 +2,7 @@ import pkg from 'uuid';
 import Call from '../models/Call.js';
 import redis from '../config/redis.js';
 import authService from './authService.js';
+import productionPhoneService from './productionPhoneService.js';
 
 const { v4: uuidv4 } = pkg;
 
@@ -48,13 +49,21 @@ class CallingService {
       });
       
       await call.save();
-      
+
+      // Create Agora call room
+      const callRoom = await productionPhoneService.createCallRoom(callId, fromUserId, toUserId);
+    
       // Cache active call
       await this.cacheActiveCall(callId, call);
       
       // TODO: Send push notification to recipient if they're a registered user
       if (toUserId) {
-        await this.notifyRecipient(toUserId, call);
+        await this.notifyRecipient(toUserId, {...call.toObject(), agoraRoom: callRoom});
+      }
+
+      // TODO: Send push notification with Agora token
+      if (toUserId) {
+        await this.notifyRecipient(toUserId, call, callRoom);
       }
       
       return {
@@ -62,7 +71,8 @@ class CallingService {
         callId,
         status: 'initiated',
         toPhoneNumber: normalizedPhone,
-        callType
+        callType,
+        agoraToken: callRoom.callerToken // caller's token
       };
     } catch (error) {
       console.error('Error initiating call:', error);
@@ -88,6 +98,20 @@ class CallingService {
       if (!['initiated', 'ringing'].includes(call.status)) {
         throw new Error(`Cannot accept call in ${call.status} state`);
       }
+
+      // Get Agora room info
+      const roomInfo = await productionPhoneService.getCallRoom(callId);
+      
+      if (!roomInfo.success) {
+        throw new Error('Call room not found or expired');
+      }
+
+      // Generate token for callee if not already generated
+      let calleeToken = roomInfo.room.calleeToken;
+      if (!calleeToken) {
+        const channelName = `call_${callId}`;
+        calleeToken = productionPhoneService.generateAgoraToken(channelName, userId, 'publisher');
+      }
       
       // Update call status
       await call.updateStatus('active');
@@ -104,7 +128,8 @@ class CallingService {
         success: true,
         callId,
         status: 'active',
-        message: 'Call accepted successfully'
+        message: 'Call accepted successfully',
+        agoraToken: calleeToken // Include callee's token
       };
       
     } catch (error) {
@@ -187,6 +212,9 @@ class CallingService {
       if (otherUserId) {
         await this.notifyCallStatusChange(otherUserId, callId, 'ended');
       }
+
+      // Cleanup Agora call room
+      await productionPhoneService.cleanupCallRoom(callId);
       
       return {
         success: true,

@@ -7,11 +7,11 @@ import dotenv from 'dotenv';
 // import { fileURLToPath } from 'url';
 // import { dirname} from 'path';
 import connectMongoDB from './config/mongodb.js';
+import productionPhoneService from './services/productionPhoneService.js';
 
 // Load environment variables
 dotenv.config();
 
-// In app.js or your main file
 if (process.env.NODE_ENV === 'development') {
   dotenv.config({ path: '.env.test' });
 }
@@ -80,6 +80,27 @@ import callRoutes from './routes/callsManagement.js';
 app.use('/api/auth', authRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/calls', callRoutes);
+
+app.get('/health/services', async (req, res) => {
+  try {
+    const healthStatus = await productionPhoneService.healthCheck();
+    const stats = await productionPhoneService.getStats();
+    
+    res.json({
+      status: healthStatus.healthy ? 'healthy' : 'unhealthy',
+      services: healthStatus.services,
+      statistics: stats,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: 'Health check failed',
+      error: error.message
+    });
+  }
+});
+
 
 // Error handling middleware
 app.use((err, req, res, next) => {

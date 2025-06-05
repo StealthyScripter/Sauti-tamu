@@ -4,6 +4,9 @@ import rateLimit from 'express-rate-limit';
 import { authenticateToken } from '../middleware/auth.js';
 import callService from '../services/callService.js';
 import callingService from '../services/callingService.js';
+import productionPhoneService from '../services/productionPhoneService.js'; // Add this line
+
+
 
 const router = express.Router();
 
@@ -13,6 +16,56 @@ const callLimiter = rateLimit({
   max: 10, // 10 calls per minute per IP
   message: 'Too many call attempts, please try again later.',
 });
+
+// Endpoint for getting call tokens
+router.post('/token',
+  [
+    body('callId').isUUID().withMessage('Valid call ID required'),
+    body('role').optional().isIn(['publisher', 'audience']).withMessage('Role must be publisher or audience')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array()
+        });
+      }
+
+      const { callId, role = 'publisher' } = req.body;
+      const userId = req.user.userId;
+
+      // Verify user is part of this call
+      const call = await callingService.getCall(callId);
+      if (!call || (call.fromUserId !== userId && call.toUserId !== userId)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Unauthorized to access this call'
+        });
+      }
+
+      // Generate Agora token
+      const channelName = `call_${callId}`;
+      const tokenData = productionPhoneService.generateAgoraToken(channelName, userId, role);
+
+      res.json({
+        success: true,
+        message: 'Call token generated successfully',
+        data: tokenData
+      });
+
+    } catch (error) {
+      console.error('Token generation error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to generate call token',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
 
 // All call routes require authentication
 router.use(authenticateToken);
@@ -389,5 +442,7 @@ router.get('/:callId',
     }
   }
 );
+
+
 
 export default router;
