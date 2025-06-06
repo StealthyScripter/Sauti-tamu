@@ -117,6 +117,76 @@ async function runMigrations() {
       FROM users u
       LEFT JOIN call_sessions cs ON u.id = cs.from_user_id
       GROUP BY u.id, u.display_name;
+
+      -- Call recordings table
+      CREATE TABLE IF NOT EXISTS call_recordings (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          recording_id VARCHAR(100) UNIQUE NOT NULL,
+          call_id UUID NOT NULL,
+          user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+          end_time TIMESTAMP WITH TIME ZONE,
+          duration_seconds INTEGER DEFAULT 0,
+          file_size_bytes BIGINT DEFAULT 0,
+          file_urls JSONB, -- Array of file URLs/paths
+          agora_response JSONB, -- Full Agora API response
+          status VARCHAR(20) CHECK (status IN ('recording', 'stopped', 'failed', 'processing')) DEFAULT 'recording',
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Indexes for efficient queries
+      CREATE INDEX IF NOT EXISTS idx_call_recordings_user_id ON call_recordings(user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_call_recordings_call_id ON call_recordings(call_id);
+      CREATE INDEX IF NOT EXISTS idx_call_recordings_status ON call_recordings(status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_call_recordings_recording_id ON call_recordings(recording_id);
+
+      -- Add recording support to existing call_sessions table
+      ALTER TABLE call_sessions 
+      ADD COLUMN IF NOT EXISTS recording_enabled BOOLEAN DEFAULT false,
+      ADD COLUMN IF NOT EXISTS recording_id VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS recording_status VARCHAR(20) CHECK (recording_status IN ('none', 'recording', 'stopped', 'failed'));
+
+      -- Update triggers for call_recordings
+      CREATE TRIGGER update_call_recordings_updated_at 
+      BEFORE UPDATE ON call_recordings
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+      -- View for call recordings with user info
+      CREATE OR REPLACE VIEW call_recordings_with_users AS
+      SELECT 
+          cr.*,
+          u.display_name as user_name,
+          u.phone_number as user_phone,
+          cs.from_user_id,
+          cs.to_user_id,
+          cs.to_phone_number,
+          cs.call_type
+      FROM call_recordings cr
+      JOIN users u ON cr.user_id = u.id
+      LEFT JOIN call_sessions cs ON cr.call_id = cs.call_id;
+
+      -- Function to get recording statistics
+      CREATE OR REPLACE FUNCTION get_recording_stats(user_uuid UUID)
+      RETURNS TABLE (
+          total_recordings BIGINT,
+          total_duration_seconds BIGINT,
+          total_file_size_bytes BIGINT,
+          avg_duration_seconds NUMERIC,
+          recordings_this_month BIGINT
+      ) AS $
+      BEGIN
+          RETURN QUERY
+          SELECT 
+              COUNT(*)::BIGINT as total_recordings,
+              COALESCE(SUM(duration_seconds), 0)::BIGINT as total_duration_seconds,
+              COALESCE(SUM(file_size_bytes), 0)::BIGINT as total_file_size_bytes,
+              COALESCE(AVG(duration_seconds), 0)::NUMERIC as avg_duration_seconds,
+              COUNT(*) FILTER (WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP))::BIGINT as recordings_this_month
+          FROM call_recordings 
+          WHERE user_id = user_uuid AND status = 'stopped';
+      END;
+      $ LANGUAGE plpgsql;
     `;
 
     await pool.query(createSchema);
