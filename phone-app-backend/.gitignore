@@ -63,3 +63,4 @@ test-resources.txt
 
 # Windows generated files
 Thumbs.db
+docs/.fuse_hidden*

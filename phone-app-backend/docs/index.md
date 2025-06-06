@@ -199,7 +199,7 @@ JWT_SECRET=complex-production-secret-key
 
 # Use managed database services
 POSTGRES_HOST=your-rds-endpoint
-MONGODB_URI=mongodb+srv://username:password@your-cluster.mongodb.net/phoneapp
+MONGODB_URI=mongodb+srv://<username>:<password>@<your-cluster>.mongodb.net/phoneapp
 REDIS_HOST=your-elasticache-endpoint
 CLICKHOUSE_URL=https://your-clickhouse-cloud.com:8443
 
