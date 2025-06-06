@@ -5,6 +5,8 @@ import authService from './authService.js';
 import productionPhoneService from './productionPhoneService.js';
 import websocketService from './websocketService.js';
 import callTimeoutService from './callTimeoutService.js';
+import pushNotificationService from './pushNotificationService.js';
+import callRecordingService from './callRecordingService.js';
 
 const { v4: uuidv4 } = pkg;
 
@@ -47,25 +49,32 @@ class CallingService {
       await call.save();
 
       const callRoom = await productionPhoneService.createCallRoom(callId, fromUserId, toUserId);
-
       await this.cacheActiveCall(callId, call);
-
-      // NEW: Set timeout in case the call isn't picked up
       await callTimeoutService.setRingTimeout(callId);
 
-      // NEW: Notify via WebSocket if online, fallback to push (placeholder)
       if (toUserId) {
-        const notificationSent = websocketService.notifyIncomingCall(toUserId, {
+        const callData = {
           callId,
           fromUserId,
           fromDisplayName: metadata.fromDisplayName || 'Unknown',
           callType,
           agoraToken: callRoom.calleeToken
-        });
+        };
 
-        if (!notificationSent) {
-          console.log(`📱 User ${toUserId} offline, should send push notification`);
-          // TODO: Implement push notification fallback
+        //Try websocket first
+        const wsNotificationSent = websocketService.notifyIncomingCall(toUserId, callData);
+
+        // Fallback to push notification if WebSocket fails
+        if (!wsNotificationSent) {
+          console.log(`📱 User ${toUserId} offline, sending push notification`);
+          try {
+            const pushResult = await pushNotificationService.sendIncomingCallNotification(toUserId, callData);
+            console.log('📱 Push notification result:', pushResult);
+          } catch (pushError) {
+            console.error('❌ Push notification failed:', pushError);
+          }
+        } else {
+          console.log(`🔌 WebSocket notification sent to user ${toUserId}`);
         }
       }
 
@@ -116,17 +125,47 @@ class CallingService {
       await call.updateStatus('active');
       await this.cacheActiveCall(callId, call);
 
-      // NEW: WebSocket notify
+      //WebSocket notify
       websocketService.notifyCallStatusChange(call.fromUserId, callId, 'active', {
         message: 'Call was accepted'
       });
+
+      // NEW: Start recording if enabled
+      let recordingInfo = null;
+      if (metadata.enableRecording || call.metadata?.enableRecording) {
+        try {
+          const channelName = `call_${callId}`;
+          const recordingResult = await callRecordingService.startRecording(
+            callId, 
+            channelName, 
+            userId, 
+            {
+              videoEnabled: call.callType === 'video',
+              subscribedUsers: [call.fromUserId, call.toUserId].filter(Boolean)
+            }
+          );
+          
+          if (recordingResult.success) {
+            recordingInfo = {
+              recordingId: recordingResult.recordingId,
+              status: 'recording'
+            };
+            console.log(`🎙️ Recording started for call ${callId}`);
+          } else {
+            console.warn(`⚠️ Failed to start recording: ${recordingResult.error}`);
+          }
+        } catch (recordingError) {
+          console.error('❌ Recording start error:', recordingError);
+        }
+      }
 
       return {
         success: true,
         callId,
         status: 'active',
         message: 'Call accepted successfully',
-        agoraToken: calleeToken
+        agoraToken: calleeToken,
+        recording: recordingInfo
       };
     } catch (error) {
       console.error('Error accepting call:', error);
@@ -188,6 +227,27 @@ class CallingService {
 
       await callTimeoutService.clearTimeout(callId);
 
+      // NEW: Stop recording if active
+      let recordingResult = null;
+      try {
+        // Check if there's an active recording for this call
+        const activeRecordings = await redis.keys('recording:*');
+        for (const key of activeRecordings) {
+          const recordingData = await redis.get(key);
+          const recording = JSON.parse(recordingData);
+          
+          if (recording.callId === callId && recording.status === 'recording') {
+            recordingResult = await callRecordingService.stopRecording(recording.recordingId, userId);
+            if (recordingResult.success) {
+              console.log(`🎙️ Recording stopped for call ${callId}`);
+            }
+            break;
+          }
+        }
+      } catch (recordingError) {
+        console.error('❌ Recording stop error:', recordingError);
+      }
+
       call.endTime = new Date();
       call.duration = Math.round((call.endTime - call.startTime) / 1000);
 
@@ -204,6 +264,18 @@ class CallingService {
           duration: call.duration,
           message: 'Call was ended'
         });
+      }
+
+      // Push notification for call ended
+      try {
+        await pushNotificationService.sendCallStatusNotification(otherUserId, {
+          callId,
+          status: 'ended',
+          duration: call.duration,
+          fromDisplayName: call.metadata?.fromDisplayName || 'Unknown'
+        });
+      }catch (pushError) {
+        console.error('❌ Push notification for call end failed:', pushError);
       }
 
       await productionPhoneService.cleanupCallRoom(callId);
@@ -308,6 +380,80 @@ class CallingService {
       timestamp: new Date().toISOString()
     };
     await redis.publish(`notifications:${userId}`, JSON.stringify(notification));
+  }
+
+  // NEW: Method to toggle recording during active call
+  async toggleRecording(callId, userId, enable = true) {
+    try {
+      const call = await Call.findOne({ callId });
+
+      if (!call) {
+        throw new Error('Call not found');
+      }
+
+      if (call.fromUserId !== userId && call.toUserId !== userId) {
+        throw new Error('Unauthorized to control recording for this call');
+      }
+
+      if (call.status !== 'active') {
+        throw new Error('Can only control recording during active calls');
+      }
+
+      if (enable) {
+        // Start recording
+        const channelName = `call_${callId}`;
+        const result = await callRecordingService.startRecording(
+          callId, 
+          channelName, 
+          userId,
+          {
+            videoEnabled: call.callType === 'video',
+            subscribedUsers: [call.fromUserId, call.toUserId].filter(Boolean)
+          }
+        );
+
+        if (result.success) {
+          // Notify other party
+          const otherUserId = call.fromUserId === userId ? call.toUserId : call.fromUserId;
+          if (otherUserId) {
+            websocketService.notifyCallStatusChange(otherUserId, callId, 'recording_started', {
+              message: 'Recording started'
+            });
+          }
+        }
+
+        return result;
+      } else {
+        // Stop recording
+        const activeRecordings = await redis.keys('recording:*');
+        for (const key of activeRecordings) {
+          const recordingData = await redis.get(key);
+          const recording = JSON.parse(recordingData);
+          
+          if (recording.callId === callId && recording.status === 'recording') {
+            const result = await callRecordingService.stopRecording(recording.recordingId, userId);
+            
+            if (result.success) {
+              // Notify other party
+              const otherUserId = call.fromUserId === userId ? call.toUserId : call.fromUserId;
+              if (otherUserId) {
+                websocketService.notifyCallStatusChange(otherUserId, callId, 'recording_stopped', {
+                  message: 'Recording stopped'
+                });
+              }
+            }
+            
+            return result;
+          }
+        }
+        
+        return { success: false, reason: 'no_active_recording' };
+      }
+
+    } catch (error) {
+      console.error('Error toggling recording:', error);
+      throw error;
+    }
   }
 }
 

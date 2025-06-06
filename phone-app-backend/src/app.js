@@ -7,10 +7,18 @@ import dotenv from 'dotenv';
 import { createServer } from 'http'; // Add this import
 import connectMongoDB from './config/mongodb.js';
 import productionPhoneService from './services/productionPhoneService.js';
+import pushNotificationService from './services/pushNotificationService.js';
+import callRecordingService from './services/callRecordingService.js';
 
-// Import new services
+
+// Import services
 import websocketService from './services/websocketService.js';
 import callTimeoutService from './services/callTimeoutService.js';
+import authRoutes from './routes/auth.js';
+import contactRoutes from './routes/contacts.js';
+import callRoutes from './routes/callsManagement.js';
+import notificationRoutes from './routes/notifications.js';
+import recordingRoutes from './routes/recordings.js';
 
 // Load environment variables
 dotenv.config();
@@ -74,15 +82,13 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Import and use route modules
-import authRoutes from './routes/auth.js';
-import contactRoutes from './routes/contacts.js';
-import callRoutes from './routes/callsManagement.js';
-
 app.use('/api/auth', authRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/calls', callRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/recordings', recordingRoutes);
 
+// Health check endpoints
 app.get('/health/services', async (req, res) => {
   try {
     const healthStatus = await productionPhoneService.healthCheck();
@@ -95,13 +101,17 @@ app.get('/health/services', async (req, res) => {
     };
     
     const timeoutStats = callTimeoutService.getStats();
+    const pushStats = pushNotificationService.getStats(); // NEW
+    const recordingStats = callRecordingService.getStats(); // NEW
     
     res.json({
       status: healthStatus.healthy ? 'healthy' : 'unhealthy',
       services: {
         ...healthStatus.services,
         websocket: wsStats,
-        callTimeout: timeoutStats
+        callTimeout: timeoutStats,
+        pushNotifications: pushStats, // NEW
+        callRecording: recordingStats // NEW
       },
       statistics: stats,
       timestamp: new Date().toISOString()
