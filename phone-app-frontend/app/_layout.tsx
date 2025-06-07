@@ -1,20 +1,17 @@
-import { Tabs } from 'expo-router';
+import { Stack } from 'expo-router';
 import { View, StyleSheet } from 'react-native';
+import { AppProvider } from '../context/AppContext';
 
 export default function RootLayout() {
   return (
-    <View style={styles.container}>
-      <Tabs screenOptions={{
-        tabBarStyle: { backgroundColor: '#1a1a2e' },
-        tabBarActiveTintColor: '#00ff88',
-        headerShown: false,
-      }}>
-        <Tabs.Screen name="index" options={{ title: 'Dialer' }} />
-        <Tabs.Screen name="recent" options={{ title: 'Recent' }} />
-        <Tabs.Screen name="contacts" options={{ title: 'Contacts' }} />
-        <Tabs.Screen name="settings" options={{ title: 'Settings' }} />
-      </Tabs>
-    </View>
+    <AppProvider>
+      <View style={styles.container}>
+        <Stack screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: '#0f0f23' },
+        }} />
+      </View>
+    </AppProvider>
   );
 }
 
