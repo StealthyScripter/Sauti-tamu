@@ -1,114 +1,87 @@
-// app/index.tsx
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity } from "react-native";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
+import { mobileStyles } from "../../styles/mobileStyles";
 
 export default function DialerScreen() {
   const router = useRouter();
   const [number, setNumber] = useState("");
 
-  const addDigit = (digit: string) => {
+  const addDigit = (digit:unknown) => {
     setNumber((prev) => prev + digit);
+  };
+
+  const deleteDigit = () => {
+    setNumber((prev) => prev.slice(0, -1));
   };
 
   const makeCall = () => {
     if (number) {
-      router.push('/active-call');
+      router.push("/active-call");
       setTimeout(() => {
         setNumber("");
       }, 2000);
     }
   };
 
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>SmartConnect</Text>
-      <Text style={styles.subtitle}>AI-Powered Calling</Text>
+  // Always maintain 3 columns: 123, 456, 789, *0#
+  const keypadRows = [
+    [{ digit: '1', letters: '' }, { digit: '2', letters: 'ABC' }, { digit: '3', letters: 'DEF' }],
+    [{ digit: '4', letters: 'GHI' }, { digit: '5', letters: 'JKL' }, { digit: '6', letters: 'MNO' }],
+    [{ digit: '7', letters: 'PQRS' }, { digit: '8', letters: 'TUV' }, { digit: '9', letters: 'WXYZ' }],
+    [{ digit: '*', letters: '' }, { digit: '0', letters: '+' }, { digit: '#', letters: '' }],
+  ];
 
-      <View style={styles.display}>
-        <Text style={styles.number}>{number || "Enter number"}</Text>
+  return (
+    <View style={mobileStyles.containerWithSafeArea}>
+      <Text style={mobileStyles.title}>SmartConnect</Text>
+      <Text style={mobileStyles.subtitle}>AI-Powered Calling</Text>
+
+      <View style={mobileStyles.numberDisplay}>
+        <Text style={mobileStyles.numberText} numberOfLines={1} adjustsFontSizeToFit>
+          {number || "Enter number"}
+        </Text>
+        {number ? (
+          <TouchableOpacity style={mobileStyles.deleteButton} onPress={deleteDigit}>
+            <Text style={mobileStyles.deleteText}>⌫</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
-      <View style={styles.keypad}>
-        {"123456789*0#".split("").map((digit) => (
-          <TouchableOpacity
-            key={digit}
-            style={styles.key}
-            onPress={() => addDigit(digit)}
-          >
-            <Text style={styles.keyText}>{digit}</Text>
-          </TouchableOpacity>
+      <View style={mobileStyles.keypad}>
+        {keypadRows.map((row, rowIndex) => (
+          <View key={rowIndex} style={mobileStyles.keypadRow}>
+            {row.map((button) => (
+              <TouchableOpacity
+                key={button.digit}
+                style={mobileStyles.keypadButton}
+                onPress={() => addDigit(button.digit)}
+              >
+                <Text style={mobileStyles.keyText}>{button.digit}</Text>
+                {button.letters ? (
+                  <Text style={mobileStyles.keyLetters}>{button.letters}</Text>
+                ) : null}
+              </TouchableOpacity>
+            ))}
+          </View>
         ))}
       </View>
 
-      <TouchableOpacity style={styles.callBtn} onPress={makeCall}>
-        <Text style={styles.callText}>📞 Call</Text>
+      <TouchableOpacity 
+        style={[
+          mobileStyles.callButton,
+          !number && { backgroundColor: '#333' }
+        ]} 
+        onPress={makeCall}
+        disabled={!number}
+      >
+        <Text style={[
+          { color: '#000', fontWeight: 'bold', fontSize: 18 },
+          !number && { color: '#666' }
+        ]}>
+          📞 Call
+        </Text>
       </TouchableOpacity>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    backgroundColor: "#0f0f23",
-    flex: 1,
-    padding: 20,
-    alignItems: "center",
-  },
-  title: {
-    color: "#fff",
-    fontSize: 28,
-    fontWeight: "bold",
-    marginTop: 40,
-  },
-  subtitle: {
-    color: "#00ff88",
-    fontSize: 14,
-    marginBottom: 20,
-  },
-  display: {
-    marginVertical: 20,
-    padding: 20,
-    backgroundColor: "#1a1a2e",
-    borderRadius: 12,
-    width: "100%",
-    alignItems: "center",
-  },
-  number: {
-    color: "#fff",
-    fontSize: 24,
-  },
-  keypad: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    gap: 10,
-    width: "100%",
-  },
-  key: {
-    width: 80,
-    height: 80,
-    backgroundColor: "#1a1a2e",
-    borderRadius: 40,
-    alignItems: "center",
-    justifyContent: "center",
-    margin: 5,
-  },
-  keyText: {
-    color: "#fff",
-    fontSize: 24,
-    fontWeight: "600",
-  },
-  callBtn: {
-    backgroundColor: "#00ff88",
-    paddingVertical: 12,
-    paddingHorizontal: 48,
-    borderRadius: 40,
-    marginTop: 20,
-  },
-  callText: {
-    color: "#000",
-    fontWeight: "bold",
-    fontSize: 18,
-  },
-});
