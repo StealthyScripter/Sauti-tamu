@@ -1,10 +1,12 @@
-import { View, Text, TouchableOpacity, Switch, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, Switch, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { mobileStyles } from '../../styles/mobileStyles';
 
 export default function Settings() {
   const router = useRouter();
+  
+  // Boolean variables to track settings status
   const [aiRouting, setAiRouting] = useState(true);
   const [notifications, setNotifications] = useState(true);
   const [autoRecord, setAutoRecord] = useState(false);
@@ -29,6 +31,24 @@ export default function Settings() {
       onToggle: setAutoRecord,
     },
   ];
+
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert('Signed Out', 'You have been signed out successfully.');
+            // In real app, clear user data and navigate to login
+          }
+        }
+      ]
+    );
+  };
 
   return (
     <View style={mobileStyles.scrollContainer}>
@@ -70,8 +90,19 @@ export default function Settings() {
             <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={mobileStyles.menuItem}>
+          <TouchableOpacity 
+            style={mobileStyles.menuItem}
+            onPress={() => router.push('/call-quality')}
+          >
             <Text style={mobileStyles.bodyText}>📞 Call Quality</Text>
+            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={mobileStyles.menuItem}
+            onPress={handleSignOut}
+          >
+            <Text style={[mobileStyles.bodyText, { color: '#ff4757' }]}>🚪 Sign Out</Text>
             <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
           </TouchableOpacity>
         </View>
@@ -79,12 +110,18 @@ export default function Settings() {
         <View style={mobileStyles.section}>
           <Text style={mobileStyles.sectionTitle}>Support</Text>
           
-          <TouchableOpacity style={mobileStyles.menuItem}>
+          <TouchableOpacity 
+            style={mobileStyles.menuItem}
+            onPress={() => router.push('/help-center')}
+          >
             <Text style={mobileStyles.bodyText}>❓ Help Center</Text>
             <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
           </TouchableOpacity>
           
-          <TouchableOpacity style={mobileStyles.menuItem}>
+          <TouchableOpacity 
+            style={mobileStyles.menuItem}
+            onPress={() => router.push('/contact-support')}
+          >
             <Text style={mobileStyles.bodyText}>📧 Contact Support</Text>
             <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
           </TouchableOpacity>

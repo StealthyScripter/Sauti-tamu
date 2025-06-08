@@ -24,6 +24,10 @@ export default function DialerScreen() {
     }
   };
 
+  const handleLongPressZero = () => {
+    setNumber((prev) => prev + "+");
+  };
+
   // Always maintain 3 columns: 123, 456, 789, *0#
   const keypadRows = [
     [{ digit: '1', letters: '' }, { digit: '2', letters: 'ABC' }, { digit: '3', letters: 'DEF' }],
@@ -56,6 +60,7 @@ export default function DialerScreen() {
                 key={button.digit}
                 style={mobileStyles.keypadButton}
                 onPress={() => addDigit(button.digit)}
+                onLongPress={button.digit === '0' ? handleLongPressZero : undefined}
               >
                 <Text style={mobileStyles.keyText}>{button.digit}</Text>
                 {button.letters ? (
@@ -70,7 +75,7 @@ export default function DialerScreen() {
       <TouchableOpacity 
         style={[
           mobileStyles.callButton,
-          !number && { backgroundColor: '#333' }
+          !number && { backgroundColor: '#02e67f' }
         ]} 
         onPress={makeCall}
         disabled={!number}
