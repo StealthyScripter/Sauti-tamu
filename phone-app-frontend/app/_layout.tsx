@@ -17,9 +17,13 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   container: {
-    maxWidth: 410,
-    width: '100%',
-    alignSelf: 'center',
     flex: 1,
+    backgroundColor: '#0f0f23',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
+    maxWidth: 430,
+    alignSelf: 'center',
+    width: '100%',
   },
 });

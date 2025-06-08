@@ -1,9 +1,12 @@
-import { View, Text, StyleSheet, TouchableOpacity, Switch } from 'react-native';
+import { View, Text, TouchableOpacity, Switch, ScrollView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
+import { mobileStyles } from '../../styles/mobileStyles';
 
 export default function Settings() {
   const router = useRouter();
+  
+  // Boolean variables to track settings status
   const [aiRouting, setAiRouting] = useState(true);
   const [notifications, setNotifications] = useState(true);
   const [autoRecord, setAutoRecord] = useState(false);
@@ -29,137 +32,108 @@ export default function Settings() {
     },
   ];
 
+  const handleSignOut = () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert('Signed Out', 'You have been signed out successfully.');
+            // In real app, clear user data and navigate to login
+          }
+        }
+      ]
+    );
+  };
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Settings</Text>
-      
-      {settingsOptions.map((option, index) => (
-        <View key={index} style={styles.settingItem}>
-          <View style={styles.settingText}>
-            <Text style={styles.settingTitle}>{option.title}</Text>
-            <Text style={styles.settingDescription}>{option.description}</Text>
+    <View style={mobileStyles.scrollContainer}>
+      <ScrollView 
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={mobileStyles.header}>Settings</Text>
+        
+        {settingsOptions.map((option, index) => (
+          <View key={index} style={mobileStyles.settingItem}>
+            <View style={{ flex: 1 }}>
+              <Text style={mobileStyles.bodyTextBold}>{option.title}</Text>
+              <Text style={mobileStyles.smallText}>{option.description}</Text>
+            </View>
+            <Switch
+              value={option.value}
+              onValueChange={option.onToggle}
+              trackColor={{ false: '#444', true: '#00ff88' }}
+              thumbColor={option.value ? '#fff' : '#ccc'}
+            />
           </View>
-          <Switch
-            value={option.value}
-            onValueChange={option.onToggle}
-            trackColor={{ false: '#444', true: '#00ff88' }}
-            thumbColor={option.value ? '#fff' : '#ccc'}
-          />
+        ))}
+
+        <View style={mobileStyles.section}>
+          <Text style={mobileStyles.sectionTitle}>Account</Text>
+          
+          <TouchableOpacity 
+            style={mobileStyles.menuItem}
+            onPress={() => router.push('/profile')}
+          >
+            <Text style={mobileStyles.bodyText}>👤 Profile</Text>
+            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={mobileStyles.menuItem}>
+            <Text style={mobileStyles.bodyText}>💳 Billing & Usage</Text>
+            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={mobileStyles.menuItem}
+            onPress={() => router.push('/call-quality')}
+          >
+            <Text style={mobileStyles.bodyText}>📞 Call Quality</Text>
+            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={mobileStyles.menuItem}
+            onPress={handleSignOut}
+          >
+            <Text style={[mobileStyles.bodyText, { color: '#ff4757' }]}>🚪 Sign Out</Text>
+            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+          </TouchableOpacity>
         </View>
-      ))}
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account</Text>
-        <TouchableOpacity 
-          style={styles.menuItem}
-          onPress={() => router.push('/profile')}
-        >
-          <Text style={styles.menuText}>👤 Profile</Text>
-          <Text style={styles.arrow}>›</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>💳 Billing & Usage</Text>
-          <Text style={styles.arrow}>›</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>📞 Call Quality</Text>
-          <Text style={styles.arrow}>›</Text>
-        </TouchableOpacity>
-      </View>
+        <View style={mobileStyles.section}>
+          <Text style={mobileStyles.sectionTitle}>Support</Text>
+          
+          <TouchableOpacity 
+            style={mobileStyles.menuItem}
+            onPress={() => router.push('/help-center')}
+          >
+            <Text style={mobileStyles.bodyText}>❓ Help Center</Text>
+            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={mobileStyles.menuItem}
+            onPress={() => router.push('/contact-support')}
+          >
+            <Text style={mobileStyles.bodyText}>📧 Contact Support</Text>
+            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={mobileStyles.menuItem}>
+            <Text style={mobileStyles.bodyText}>⭐ Rate App</Text>
+            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+          </TouchableOpacity>
+        </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Support</Text>
-        <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>❓ Help Center</Text>
-          <Text style={styles.arrow}>›</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>📧 Contact Support</Text>
-          <Text style={styles.arrow}>›</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.menuItem}>
-          <Text style={styles.menuText}>⭐ Rate App</Text>
-          <Text style={styles.arrow}>›</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Text style={styles.version}>Version 1.0.0</Text>
+        <Text style={mobileStyles.versionText}>Version 1.0.0</Text>
+      </ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    maxWidth: 410,
-    width: '100%',
-    alignSelf: 'center',
-    flex: 1,
-    backgroundColor: '#0f0f23',
-    padding: 20,
-  },
-  header: {
-    color: '#fff',
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 20,
-  },
-  settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1a1a2e',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  settingText: {
-    flex: 1,
-  },
-  settingTitle: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  settingDescription: {
-    color: '#ccc',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  section: {
-    marginTop: 24,
-  },
-  sectionTitle: {
-    color: '#00ff88',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 12,
-    textTransform: 'uppercase',
-  },
-  menuItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#1a1a2e',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  menuText: {
-    color: '#fff',
-    fontSize: 16,
-  },
-  arrow: {
-    color: '#ccc',
-    fontSize: 18,
-  },
-  version: {
-    color: '#666',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 24,
-  },
-});

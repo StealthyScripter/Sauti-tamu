@@ -1,147 +1,123 @@
-import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
-import { useRouter } from 'expo-router';
+import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import React from 'react';
-import Header from '../components/Header';
+import { mobileStyles } from '../styles/mobileStyles';
+
+// Helper function to ensure string type from params
+const getStringParam = (param: string | string[] | undefined): string => {
+  if (Array.isArray(param)) {
+    return param[0] || '';
+  }
+  return param || '';
+};
 
 export default function ContactDetail() {
   const router = useRouter();
+  const params = useLocalSearchParams();
+  
+  // Use params from navigation or fallback to default
   const contact = {
-    name: 'Ahmed Kofi',
-    initials: 'AK',
-    number: '+234 803 123 4567',
-    country: 'Nigeria',
+    name: getStringParam(params.name) || 'Ahmed Kofi',
+    initials: getStringParam(params.initials) || 'AK',
+    number: getStringParam(params.number) || '+234 803 123 4567',
+    location: getStringParam(params.location) || 'Lagos, Nigeria',
     savings: '$0.08/min (70% savings)',
     carrier: 'Carrier A',
     quality: 'HD Quality',
     uptime: '99.2% uptime',
   };
 
+  const handleCall = () => {
+    router.push('/active-call');
+  };
+
+  const handleMessage = () => {
+    router.push({
+      pathname: '/compose-message',
+      params: {
+        contactName: contact.name,
+        contactNumber: contact.number,
+      }
+    });
+  };
+
+  const handleEdit = () => {
+    router.push({
+      pathname: '/add-contacts',
+      params: {
+        edit: 'true',
+        name: contact.name,
+        number: contact.number,
+        location: contact.location,
+      }
+    });
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete Contact',
+      `Are you sure you want to delete ${contact.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert('Deleted', `${contact.name} has been deleted.`);
+            router.back();
+          }
+        }
+      ]
+    );
+  };
+
   return (
-    <View style={styles.container}>
-      <Header title={contact.name} subtitle={contact.country} />
+    <View style={mobileStyles.scrollContainer}>
+      <ScrollView 
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={mobileStyles.header}>{contact.name}</Text>
 
-      <View style={styles.avatar}><Text style={styles.avatarText}>{contact.initials}</Text></View>
+        <View style={mobileStyles.avatarMedium}>
+          <Text style={mobileStyles.avatarTextLarge}>{contact.initials}</Text>
+        </View>
 
-      <View style={styles.buttonRow}>
-        <TouchableOpacity style={styles.callButton}><Text>📞 Call</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton}><Text>💬 Message</Text></TouchableOpacity>
-      </View>
+        <View style={mobileStyles.buttonRow}>
+          <TouchableOpacity style={mobileStyles.primaryButton} onPress={handleCall}>
+            <Text style={mobileStyles.whiteText}>📞 Call</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={mobileStyles.secondaryButton} onPress={handleMessage}>
+            <Text style={mobileStyles.whiteText}>💬 Message</Text>
+          </TouchableOpacity>
+        </View>
 
-      <View style={styles.formGroup}>
-        <Text style={styles.label}>Phone Number</Text>
-        <TextInput value={contact.number} editable={false} style={styles.input} />
-      </View>
+        <View style={mobileStyles.formGroup}>
+          <Text style={mobileStyles.label}>Phone Number</Text>
+          <TextInput value={contact.number} editable={false} style={mobileStyles.input} />
+        </View>
 
-      <View style={styles.formGroup}>
-        <Text style={styles.label}>Country</Text>
-        <TextInput value={contact.country} editable={false} style={styles.input} />
-      </View>
+        <View style={mobileStyles.formGroup}>
+          <Text style={mobileStyles.label}>Location</Text>
+          <TextInput value={contact.location} editable={false} style={mobileStyles.input} />
+        </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>AI Route Optimization</Text>
-        <Text style={styles.greenText}>Current best rate: {contact.savings}</Text>
-        <Text style={styles.grayText}>{contact.carrier} • {contact.quality} • {contact.uptime}</Text>
-      </View>
+        <View style={mobileStyles.infoCard}>
+          <Text style={mobileStyles.bodyTextBold}>AI Route Optimization</Text>
+          <Text style={mobileStyles.greenText}>Current best rate: {contact.savings}</Text>
+          <Text style={mobileStyles.smallText}>{contact.carrier} • {contact.quality} • {contact.uptime}</Text>
+        </View>
 
-      <View style={styles.buttonRow}>
-        <TouchableOpacity style={styles.primaryButton}><Text>✏️ Edit</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton}><Text>🗑 Delete</Text></TouchableOpacity>
-      </View>
+        <View style={mobileStyles.buttonRow}>
+          <TouchableOpacity style={mobileStyles.primaryButton} onPress={handleEdit}>
+            <Text style={mobileStyles.whiteText}>✏️ Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={mobileStyles.secondaryButton} onPress={handleDelete}>
+            <Text style={mobileStyles.whiteText}>🗑 Delete</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    maxWidth: 410,
-    width: '100%',
-    alignSelf: 'center',
-    flex: 1,
-    backgroundColor: '#0f0f23',
-    padding: 20,
-  },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#00ff88',
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-    marginBottom: 20,
-  },
-  avatarText: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginVertical: 12,
-  },
-  callButton: {
-    flex: 1,
-    backgroundColor: '#00ff88',
-    padding: 12,
-    marginRight: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  primaryButton: {
-    flex: 1,
-    backgroundColor: '#00ff88',
-    padding: 12,
-    marginRight: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  secondaryButton: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    padding: 12,
-    marginLeft: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  formGroup: {
-    marginBottom: 12,
-  },
-  label: {
-    color: '#00ff88',
-    marginBottom: 4,
-    fontWeight: '500',
-  },
-  input: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    color: '#fff',
-    padding: 12,
-    borderRadius: 8,
-    fontSize: 16,
-  },
-  card: {
-    backgroundColor: 'rgba(0,255,136,0.1)',
-    padding: 16,
-    borderRadius: 12,
-    marginVertical: 16,
-    borderWidth: 1,
-    borderColor: '#00ff88',
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-    color: '#fff',
-  },
-  greenText: {
-    color: '#00ff88',
-    fontSize: 14,
-  },
-  grayText: {
-    color: '#ccc',
-    fontSize: 12,
-    marginTop: 4,
-  },
-});
