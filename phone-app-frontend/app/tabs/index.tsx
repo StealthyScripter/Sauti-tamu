@@ -13,7 +13,7 @@ export default function DialerScreen() {
 
   const makeCall = () => {
     if (number) {
-      router.push("/active-call");
+      router.push('/active-call');
       setTimeout(() => {
         setNumber("");
       }, 2000);

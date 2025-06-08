@@ -17,7 +17,7 @@ export default function ActiveCall() {
           <TouchableOpacity key={i} style={styles.gridBtn}><Text>{icon}</Text></TouchableOpacity>
         ))}
       </View>
-      <TouchableOpacity style={styles.endCall} onPress={() => router.push('/recent')}><Text>✕</Text></TouchableOpacity>
+      <TouchableOpacity style={styles.endCall} onPress={() => router.push('/tabs/recent')}><Text>✕</Text></TouchableOpacity>
     </View>
   );
 }

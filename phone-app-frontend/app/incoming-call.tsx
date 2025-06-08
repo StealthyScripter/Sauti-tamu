@@ -12,7 +12,7 @@ export default function IncomingCall() {
       <Text style={styles.name}>Ahmed Kofi</Text>
       <Text style={styles.details}>+234 803 123 4567</Text>
       <View style={styles.buttonRow}>
-        <TouchableOpacity style={styles.decline} onPress={() => router.push('/recent')}><Text>✕</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.decline} onPress={() => router.push('/tabs/recent')}><Text>✕</Text></TouchableOpacity>
         <TouchableOpacity style={styles.accept} onPress={() => router.push('/active-call')}><Text>✓</Text></TouchableOpacity>
       </View>
     </View>
