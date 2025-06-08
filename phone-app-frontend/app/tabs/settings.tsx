@@ -2,9 +2,11 @@ import { View, Text, TouchableOpacity, Switch, ScrollView, Alert } from 'react-n
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { mobileStyles } from '../../styles/mobileStyles';
+import { useAuth } from '../../context/AuthContext';
 
 export default function Settings() {
   const router = useRouter();
+  const { user, logout } = useAuth();
   
   // Boolean variables to track settings status
   const [aiRouting, setAiRouting] = useState(true);
@@ -41,9 +43,15 @@ export default function Settings() {
         {
           text: 'Sign Out',
           style: 'destructive',
-          onPress: () => {
-            Alert.alert('Signed Out', 'You have been signed out successfully.');
-            // In real app, clear user data and navigate to login
+          onPress: async () => {
+            try {
+              await logout();
+              // Navigation will happen automatically via auth state change
+            } catch (error) {
+              console.error('❌ Logout error:', error);
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+
           }
         }
       ]
@@ -58,6 +66,12 @@ export default function Settings() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={mobileStyles.header}>Settings</Text>
+        {/* User Info */}
+        <View style={mobileStyles.infoCard}>
+          <Text style={mobileStyles.bodyTextBold}>👤 Logged in as</Text>
+          <Text style={mobileStyles.greenText}>{user?.displayName || 'User'}</Text>
+          <Text style={mobileStyles.smallText}>{user?.phoneNumber}</Text>
+        </View>
         
         {settingsOptions.map((option, index) => (
           <View key={index} style={mobileStyles.settingItem}>
@@ -82,10 +96,12 @@ export default function Settings() {
             onPress={() => router.push('/profile')}
           >
             <Text style={mobileStyles.bodyText}>👤 Profile</Text>
+
             <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
           </TouchableOpacity>
           
           <TouchableOpacity style={mobileStyles.menuItem}>
+
             <Text style={mobileStyles.bodyText}>💳 Billing & Usage</Text>
             <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
           </TouchableOpacity>

@@ -1,74 +1,203 @@
-import { View, Text, FlatList, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
-import React from 'react';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Alert } from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import React, { useState, useCallback } from 'react';
 import { mobileStyles } from '../../styles/mobileStyles';
+import apiService from '../../services/apiService';
 
 interface RecentCall {
   id: string;
-  name: string;
-  type: 'Incoming' | 'Outgoing' | 'Missed';
-  location: string;
-  time: string;
-  saved?: string;
-  number: string;
-  initials: string;
+  callId: string;
+  fromUserId: string;
+  toUserId?: string;
+  toPhoneNumber: string;
+  callType: 'voice' | 'video';
+  status: 'initiated' | 'ringing' | 'active' | 'ended' | 'failed' | 'missed' | 'rejected';
+  startTime: string;
+  endTime?: string;
+  duration?: number;
+  metadata?: any;
 }
-
-const mockRecentCalls: RecentCall[] = [
-  { id: '1', name: 'Ahmed Kofi', type: 'Outgoing', location: 'Lagos, Nigeria', time: '2 min ago', saved: '$2.40', number: '+234 803 123 4567', initials: 'AK' },
-  { id: '2', name: 'Maria Nkomo', type: 'Incoming', location: 'Cape Town, SA', time: '1 hour ago', number: '+27 82 456 7890', initials: 'MN' },
-  { id: '3', name: 'John Doe', type: 'Outgoing', location: 'Nairobi, Kenya', time: '3 hours ago', saved: '$1.80', number: '+254 701 234 567', initials: 'JD' },
-  { id: '4', name: 'Sarah Wilson', type: 'Missed', location: 'London, UK', time: '5 hours ago', number: '+44 20 7946 0958', initials: 'SW' },
-  { id: '5', name: 'Carlos Rodriguez', type: 'Outgoing', location: 'Mexico City, MX', time: 'Yesterday', saved: '$3.20', number: '+52 55 1234 5678', initials: 'CR' },
-];
 
 export default function Recent() {
   const router = useRouter();
+  const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const getCallTypeColor = (type: 'Incoming' | 'Outgoing' | 'Missed'): string => {
-    switch (type) {
-      case 'Incoming': return '#00ff88';
-      case 'Outgoing': return '#fff';
-      case 'Missed': return '#ff4757';
-      default: return '#ccc';
+  // Load call history when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadCallHistory();
+    }, [])
+  );
+
+  const loadCallHistory = async () => {
+    try {
+      console.log('📞 Loading call history...');
+      setLoading(true);
+      const response = await apiService.getCallHistory();
+      
+      if (response.success) {
+        console.log('✅ Call history loaded:', response.data?.length || 0);
+        setRecentCalls(response.data || []);
+      } else {
+        console.error('❌ Failed to load call history:', response.message);
+        Alert.alert('Error', 'Failed to load call history');
+      }
+    } catch (error) {
+      console.error('❌ Error loading call history:', error);
+      Alert.alert('Connection Error', 'Unable to load call history. Check your internet connection.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const navigateToContact = (contact: RecentCall) => {
-    // Pass contact data as URL params (simplified for demo)
-    router.push({
-      pathname: '/contact-detail',
-      params: {
-        name: contact.name,
-        number: contact.number,
-        location: contact.location,
-        initials: contact.initials,
-      }
-    });
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadCallHistory();
+    setRefreshing(false);
   };
+
+  const getCallTypeIcon = (type: 'voice' | 'video'): string => {
+    return type === 'video' ? '📹' : '📞';
+  };
+
+  const getCallTypeColor = (status: string): string => {
+    switch (status) {
+      case 'ended': return '#00ff88';
+      case 'missed': return '#ff4757';
+      case 'rejected': return '#ff6b6b';
+      case 'failed': return '#ff4757';
+      default: return '#fff';
+    }
+  };
+
+  const getCallDirection = (call: RecentCall): 'Incoming' | 'Outgoing' => {
+    // Simplified logic - you'll need to compare with current user's ID
+    return call.toUserId ? 'Outgoing' : 'Incoming';
+  };
+
+  const formatCallTime = (dateString: string): string => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+
+    if (diffInHours < 1) {
+      const minutes = Math.floor(diffInHours * 60);
+      return minutes <= 1 ? 'Just now' : `${minutes} min ago`;
+    } else if (diffInHours < 24) {
+      const hours = Math.floor(diffInHours);
+      return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    } else {
+      return date.toLocaleDateString();
+    }
+  };
+
+  const formatDuration = (seconds?: number): string => {
+    if (!seconds) return '';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
+
+  const handleCallBack = async (phoneNumber: string) => {
+    try {
+      console.log('📞 Calling back:', phoneNumber);
+      const response = await apiService.initiateCall(phoneNumber, 'voice');
+      
+      if (response.success) {
+        console.log('✅ Call initiated:', response.data);
+        // Navigate to active call screen
+        router.push({
+          pathname: '/active-call',
+          params: {
+            callId: response.data.callId,
+            phoneNumber,
+          }
+        });
+      } else {
+        Alert.alert('Call Failed', response.message || 'Unable to initiate call');
+      }
+    } catch (error) {
+      console.error('❌ Error initiating call:', error);
+      Alert.alert('Error', 'Failed to initiate call. Please try again.');
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={[mobileStyles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#00ff88" />
+        <Text style={[mobileStyles.bodyText, { marginTop: 16 }]}>Loading call history...</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={mobileStyles.container}>
       <Text style={mobileStyles.header}>Recent Calls</Text>
-      <FlatList
-        data={mockRecentCalls}
-        keyExtractor={(item) => item.id}
-        showsVerticalScrollIndicator={false}
-        renderItem={({ item }) => (
+      
+      {/* API Status */}
+      <View style={mobileStyles.infoCard}>
+        <Text style={mobileStyles.bodyTextBold}>📊 Call History</Text>
+        <Text style={mobileStyles.greenText}>Live data from backend</Text>
+        <Text style={mobileStyles.smallText}>
+          {recentCalls.length} calls loaded from database
+        </Text>
+      </View>
+      
+      {recentCalls.length === 0 ? (
+        <View style={mobileStyles.card}>
+          <Text style={mobileStyles.bodyTextBold}>No recent calls</Text>
+          <Text style={mobileStyles.smallText}>
+            Your call history will appear here once you start making calls
+          </Text>
           <TouchableOpacity 
-            style={mobileStyles.card}
-            onPress={() => navigateToContact(item)}
+            style={[mobileStyles.primaryButton, { marginTop: 16 }]}
+            onPress={() => router.push('/tabs')}
           >
-            <Text style={mobileStyles.bodyTextBold}>{item.name}</Text>
-            <Text style={[mobileStyles.smallText, { color: getCallTypeColor(item.type) }]}>
-              {item.type} • {item.location}
-            </Text>
-            <Text style={mobileStyles.greenText}>
-              {item.time} {item.saved ? `• Saved ${item.saved}` : ''}
-            </Text>
+            <Text style={{ color: '#000', fontWeight: 'bold' }}>Make Your First Call</Text>
           </TouchableOpacity>
-        )}
-      />
+        </View>
+      ) : (
+        <FlatList
+          data={recentCalls}
+          keyExtractor={(item) => item.id}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={onRefresh}
+              tintColor="#00ff88"
+            />
+          }
+          renderItem={({ item }) => (
+            <View style={mobileStyles.card}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={mobileStyles.bodyTextBold}>
+                    {getCallTypeIcon(item.callType)} {item.toPhoneNumber}
+                  </Text>
+                  <Text style={[mobileStyles.smallText, { color: getCallTypeColor(item.status) }]}>
+                    {getCallDirection(item)} • {item.status}
+                  </Text>
+                  <Text style={mobileStyles.greenText}>
+                    {formatCallTime(item.startTime)}
+                    {item.duration && ` • ${formatDuration(item.duration)}`}
+                  </Text>
+                </View>
+                
+                <TouchableOpacity
+                  style={[mobileStyles.callControlButton, { backgroundColor: '#00ff88' }]}
+                  onPress={() => handleCallBack(item.toPhoneNumber)}
+                >
+                  <Text style={{ fontSize: 20 }}>📞</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        />
+      )}
     </View>
   );
 }
