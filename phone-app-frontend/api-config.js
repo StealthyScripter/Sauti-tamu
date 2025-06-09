@@ -13,7 +13,7 @@ const getBaseURL = () => {
     }
   } else {
     // Production mode
-    return 'https://your-production-api.com';
+    return process.env.EXPO_PUBLIC_API_URL || 'https://your-production-api.com';
   }
 };
 
@@ -55,6 +55,14 @@ export const API_CONFIG = {
   // Request timeout
   TIMEOUT: 30000, // 30 seconds
 };
+// Debug logging in development
+if (__DEV__) {
+  console.log('🌐 API Configuration:', {
+    BASE_URL: API_CONFIG.BASE_URL,
+    Platform: Platform.OS,
+    Environment: __DEV__ ? 'development' : 'production'
+  });
+}
 
 // Helper function to build full API URLs
 export const buildApiUrl = (endpoint) => {

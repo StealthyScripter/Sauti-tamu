@@ -8,115 +8,31 @@
     "phone-app-frontend"
   ],
   "scripts": {
-    "preinstall": "node scripts/check-prerequisites.js",
-    "install:all": "npm run install:backend && npm run install:frontend",
-    "install:backend": "cd phone-app-backend && npm install",
-    "install:frontend": "cd phone-app-frontend && npm install",
-    
-    "start": "npm run start:production",
-    "dev": "npm run start:development",
-    
-    "start:development": "node scripts/start-development.js",
-    "start:production": "npm run db:start && npm run backend:start && npm run frontend:start",
-    "start:backend-only": "cd phone-app-backend && npm run dev",
-    "start:frontend-only": "cd phone-app-frontend && npm start",
+    "dev": "npm run db:start && concurrently \"npm run backend:dev\" \"npm run frontend:start\"",
+    "start": "npm run dev",
     
     "db:start": "cd phone-app-backend && docker-compose up -d",
     "db:stop": "cd phone-app-backend && docker-compose down",
-    "db:logs": "cd phone-app-backend && docker-compose logs -f",
-    "db:wait": "node scripts/wait-for-db.js",
-    "db:migrate": "npm run db:wait && cd phone-app-backend && npm run migrate",
+    "db:migrate": "cd phone-app-backend && npm run migrate",
     
-    "backend:start": "cd phone-app-backend && npm start",
     "backend:dev": "cd phone-app-backend && npm run dev",
-    "backend:test": "cd phone-app-backend && npm test",
-    "backend:lint": "cd phone-app-backend && npm run lint",
-    
     "frontend:start": "cd phone-app-frontend && npm start",
-    "frontend:ios": "cd phone-app-frontend && npm run ios",
-    "frontend:android": "cd phone-app-frontend && npm run android",
-    "frontend:web": "cd phone-app-frontend && npm run web",
     
-    "test": "npm run test:setup && npm run test:connection && npm run test:demo-data",
-    "test:setup": "npm run db:migrate && node scripts/setup-test-data.js",
+    "test": "npm run health && npm run test:connection",
+    "health": "node scripts/health-check.js",
     "test:connection": "cd phone-app-backend && node scripts/test-connection.js",
-    "test:demo-data": "cd phone-app-backend && node scripts/add-test-contacts.js",
-    "test:health": "curl -f http://localhost:3000/health || echo 'Backend not running'",
-    "test:all": "npm run backend:test && npm run test:connection",
     
-    "reset": "npm run reset:full",
-    "reset:full": "node scripts/full-reset.js",
-    "reset:db": "npm run db:stop && docker system prune -f && npm run db:start",
-    "reset:cache": "npm run frontend:clear-cache && npm run backend:clear-cache",
-    "backend:clear-cache": "cd phone-app-backend && rm -rf node_modules/.cache",
-    "frontend:clear-cache": "cd phone-app-frontend && npx expo r -c",
+    "reset": "node scripts/full-reset.js",
+    "stop": "node scripts/stop-all-services.js",
+    "clean": "rm -rf node_modules phone-app-backend/node_modules phone-app-frontend/node_modules",
     
-    "logs": "npm run logs:all",
-    "logs:all": "concurrently \"npm run logs:backend\" \"npm run logs:frontend\" \"npm run db:logs\"",
-    "logs:backend": "cd phone-app-backend && npm run dev 2>&1 | tee logs/backend.log",
-    "logs:frontend": "cd phone-app-frontend && npm start 2>&1 | tee logs/frontend.log",
-    
-    "health": "npm run health:all",
-    "health:all": "node scripts/health-check.js",
-    "health:backend": "curl -s http://localhost:3000/health | jq .",
-    "health:services": "curl -s http://localhost:3000/health/services | jq .",
-    
-    "build": "npm run build:backend && npm run build:frontend",
-    "build:backend": "cd phone-app-backend && echo 'Backend build not implemented'",
-    "build:frontend": "cd phone-app-frontend && npx expo export",
-    
-    "lint": "npm run lint:backend && npm run lint:frontend",
-    "lint:backend": "cd phone-app-backend && npm run lint",
-    "lint:frontend": "cd phone-app-frontend && npm run lint",
-    
-    "clean": "npm run clean:all",
-    "clean:all": "rm -rf node_modules phone-app-backend/node_modules phone-app-frontend/node_modules",
-    "clean:logs": "rm -rf logs/*.log phone-app-backend/logs/*.log",
-    
-    "setup": "npm run setup:full",
-    "setup:full": "npm run install:all && npm run db:start && npm run db:migrate && npm run test:demo-data",
-    "setup:quick": "npm run install:all && npm run db:start",
-    
-    "stop": "npm run stop:all",
-    "stop:all": "node scripts/stop-all-services.js",
-    "stop:backend": "pkill -f 'node.*phone-app-backend' || true",
-    "stop:frontend": "pkill -f 'expo.*start' || true",
-    
-    "restart": "npm run stop && npm run start",
-    "restart:dev": "npm run stop && npm run dev",
-    
-    "docker:build": "cd phone-app-backend && docker build -t calling-app-backend .",
-    "docker:run": "docker run -p 3000:3000 calling-app-backend"
+    "setup": "npm install && npm run db:start && npm run db:migrate"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2",
-    "cross-env": "^7.0.3",
-    "wait-on": "^7.2.0",
-    "chalk": "^4.1.2",
-    "inquirer": "^8.2.6"
+    "concurrently": "^8.2.2"
   },
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=8.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/yourusername/calling-app.git"
-  },
-  "keywords": [
-    "calling-app",
-    "react-native",
-    "expo",
-    "nodejs",
-    "express",
-    "ai-routing",
-    "voip",
-    "phone-authentication"
-  ],
-  "author": "Your Name",
-  "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/yourusername/calling-app/issues"
-  },
-  "homepage": "https://github.com/yourusername/calling-app#readme"
+  }
 }

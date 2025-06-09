@@ -23,9 +23,10 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // Start with loading true
+  const [isInitialized, setIsInitialized] = useState(false);
 
-  const isAuthenticated = !!(user && token);
+  const isAuthenticated = !!(user && token && isInitialized);
 
   // Load stored auth data on app start
   useEffect(() => {
@@ -35,8 +36,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const loadStoredAuth = async () => {
     try {
       console.log('🔍 Loading stored auth data...');
-      const storedToken = await AsyncStorage.getItem('authToken');
-      const storedUser = await AsyncStorage.getItem('user');
+      setIsLoading(true);
+      
+      const [storedToken, storedUser] = await Promise.all([
+        AsyncStorage.getItem('authToken'),
+        AsyncStorage.getItem('user')
+      ]);
       
       if (storedToken && storedUser) {
         console.log('✅ Found stored auth data');
@@ -49,7 +54,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error) {
       console.error('❌ Error loading stored auth:', error);
     } finally {
+      setIsInitialized(true);
       setIsLoading(false);
+      console.log('✅ Auth initialization complete');
     }
   };
 
@@ -76,8 +83,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.log('✅ Login successful:', userData);
         
         // Store auth data
-        await AsyncStorage.setItem('authToken', authToken);
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
+        await Promise.all([
+          AsyncStorage.setItem('authToken', authToken),
+          AsyncStorage.setItem('user', JSON.stringify(userData))
+        ]);
         
         // Update state
         setToken(authToken);
@@ -99,8 +108,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.log('🚪 Logging out...');
       
       // Clear stored data
-      await AsyncStorage.removeItem('authToken');
-      await AsyncStorage.removeItem('user');
+      await Promise.all([
+        AsyncStorage.removeItem('authToken'),
+        AsyncStorage.removeItem('user')
+      ]);
       
       // Clear state
       setToken(null);
