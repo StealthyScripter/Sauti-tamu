@@ -12,9 +12,34 @@ const pool = new Pool({
   password: process.env.POSTGRES_PASSWORD || 'password',
 });
 
+// Wait for PostgreSQL to be ready
+async function waitForPostgres(maxAttempts = 30) {
+  console.log('🔍 Waiting for PostgreSQL to be ready...');
+  
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await pool.query('SELECT 1');
+      console.log('✅ PostgreSQL is ready!');
+      return true;
+    } catch (error) {
+      console.log(`   Attempt ${attempt}/${maxAttempts} - PostgreSQL not ready yet...`);
+      
+      if (attempt === maxAttempts) {
+        throw new Error(`PostgreSQL failed to become ready after ${maxAttempts} attempts`);
+      }
+      
+      // Wait 2 seconds before retrying
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+}
+
 async function runMigrations() {
   try {
     console.log('Running database migrations...');
+
+    // Wait for PostgreSQL to be ready
+    await waitForPostgres();
 
     // Enable UUID extension
     await pool.query('CREATE EXTENSION IF NOT EXISTS "pgcrypto";');

@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import Contact from './src/models/Contact.js';
+import Contact from '../src/models/Contact.js'; // Fixed import path
 
 // Connect to MongoDB
 const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/phoneapp';
