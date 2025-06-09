@@ -5,21 +5,23 @@ const { Pool } = pkg;
 dotenv.config();
 
 const pool = new Pool({
-  host: process.env.POSTGRES_HOST,
-  port: process.env.POSTGRES_PORT,
-  database: process.env.POSTGRES_DB,
-  user: process.env.POSTGRES_USER,
-  password: process.env.POSTGRES_PASSWORD,
+  host: process.env.POSTGRES_HOST || 'localhost',
+  port: process.env.POSTGRES_PORT || 5432,
+  database: process.env.POSTGRES_DB || 'phoneapp',
+  user: process.env.POSTGRES_USER || 'postgres',
+  password: process.env.POSTGRES_PASSWORD || 'password',
 });
 
 async function runMigrations() {
   try {
     console.log('Running database migrations...');
 
-    const createSchema = `
-      CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    // Enable UUID extension
+    await pool.query('CREATE EXTENSION IF NOT EXISTS "pgcrypto";');
+    console.log('✅ Extensions created');
 
-      -- Users table
+    // Users table
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           phone_number VARCHAR(20) UNIQUE NOT NULL,
@@ -30,11 +32,19 @@ async function runMigrations() {
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           last_login_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+    `);
 
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_users_phone_number ON users(phone_number);
-      CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active, last_login_at DESC);
+    `);
 
-      -- User settings table
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_users_active ON users(is_active, last_login_at DESC);
+    `);
+    console.log('✅ Users table created');
+
+    // User settings table
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS user_settings (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -44,8 +54,11 @@ async function runMigrations() {
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           UNIQUE(user_id, setting_key)
       );
+    `);
+    console.log('✅ User settings table created');
 
-      -- Verification codes table
+    // Verification codes table
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS verification_codes (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           phone_number VARCHAR(20) NOT NULL,
@@ -55,11 +68,19 @@ async function runMigrations() {
           used_at TIMESTAMP WITH TIME ZONE,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+    `);
 
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_verification_codes_phone ON verification_codes(phone_number);
-      CREATE INDEX IF NOT EXISTS idx_verification_codes_expires ON verification_codes(expires_at);
+    `);
 
-      -- Call sessions table
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_verification_codes_expires ON verification_codes(expires_at);
+    `);
+    console.log('✅ Verification codes table created');
+
+    // Call sessions table
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS call_sessions (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           call_id UUID UNIQUE NOT NULL,
@@ -77,48 +98,27 @@ async function runMigrations() {
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+    `);
 
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_call_sessions_from_user ON call_sessions(from_user_id, start_time DESC);
+    `);
+
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_call_sessions_to_user ON call_sessions(to_user_id, start_time DESC);
+    `);
+
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_call_sessions_status ON call_sessions(status, start_time DESC);
+    `);
+
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_call_sessions_call_id ON call_sessions(call_id);
+    `);
+    console.log('✅ Call sessions table created');
 
-      -- Function for updating updated_at timestamp
-      CREATE OR REPLACE FUNCTION update_updated_at_column()
-      RETURNS TRIGGER AS $$
-      BEGIN
-          NEW.updated_at = CURRENT_TIMESTAMP;
-          RETURN NEW;
-      END;
-      $$ language 'plpgsql';
-
-      -- Triggers
-      CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
-          FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-      CREATE TRIGGER update_user_settings_updated_at BEFORE UPDATE ON user_settings
-          FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-      CREATE TRIGGER update_call_sessions_updated_at BEFORE UPDATE ON call_sessions
-          FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-      -- Analytics view
-      CREATE OR REPLACE VIEW call_analytics AS
-      SELECT 
-          u.id as user_id,
-          u.display_name,
-          COUNT(*) as total_calls,
-          COUNT(*) FILTER (WHERE cs.status = 'ended') as completed_calls,
-          COUNT(*) FILTER (WHERE cs.status = 'missed') as missed_calls,
-          COUNT(*) FILTER (WHERE cs.status = 'rejected') as rejected_calls,
-          AVG(cs.duration_seconds) FILTER (WHERE cs.status = 'ended') as avg_call_duration,
-          SUM(cs.duration_seconds) FILTER (WHERE cs.status = 'ended') as total_call_time,
-          MAX(cs.start_time) as last_call_time
-      FROM users u
-      LEFT JOIN call_sessions cs ON u.id = cs.from_user_id
-      GROUP BY u.id, u.display_name;
-
-      -- Call recordings table
+    // Call recordings table (simplified)
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS call_recordings (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           recording_id VARCHAR(100) UNIQUE NOT NULL,
@@ -128,70 +128,74 @@ async function runMigrations() {
           end_time TIMESTAMP WITH TIME ZONE,
           duration_seconds INTEGER DEFAULT 0,
           file_size_bytes BIGINT DEFAULT 0,
-          file_urls JSONB, -- Array of file URLs/paths
-          agora_response JSONB, -- Full Agora API response
+          file_urls JSONB,
+          agora_response JSONB,
           status VARCHAR(20) CHECK (status IN ('recording', 'stopped', 'failed', 'processing')) DEFAULT 'recording',
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+    `);
 
-      -- Indexes for efficient queries
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_call_recordings_user_id ON call_recordings(user_id, created_at DESC);
+    `);
+
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_call_recordings_call_id ON call_recordings(call_id);
+    `);
+
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_call_recordings_status ON call_recordings(status, created_at DESC);
+    `);
+
+    await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_call_recordings_recording_id ON call_recordings(recording_id);
+    `);
+    console.log('✅ Call recordings table created');
 
-      -- Add recording support to existing call_sessions table
-      ALTER TABLE call_sessions 
-      ADD COLUMN IF NOT EXISTS recording_enabled BOOLEAN DEFAULT false,
-      ADD COLUMN IF NOT EXISTS recording_id VARCHAR(100),
-      ADD COLUMN IF NOT EXISTS recording_status VARCHAR(20) CHECK (recording_status IN ('none', 'recording', 'stopped', 'failed'));
+    // Create update function for timestamps
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION update_updated_at_column()
+      RETURNS TRIGGER AS
+      'BEGIN
+          NEW.updated_at = CURRENT_TIMESTAMP;
+          RETURN NEW;
+      END;'
+      LANGUAGE 'plpgsql';
+    `);
+    console.log('✅ Update function created');
 
-      -- Update triggers for call_recordings
+    // Create triggers
+    await pool.query(`
+      DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+      CREATE TRIGGER update_users_updated_at 
+      BEFORE UPDATE ON users
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    `);
+
+    await pool.query(`
+      DROP TRIGGER IF EXISTS update_user_settings_updated_at ON user_settings;
+      CREATE TRIGGER update_user_settings_updated_at 
+      BEFORE UPDATE ON user_settings
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    `);
+
+    await pool.query(`
+      DROP TRIGGER IF EXISTS update_call_sessions_updated_at ON call_sessions;
+      CREATE TRIGGER update_call_sessions_updated_at 
+      BEFORE UPDATE ON call_sessions
+      FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    `);
+
+    await pool.query(`
+      DROP TRIGGER IF EXISTS update_call_recordings_updated_at ON call_recordings;
       CREATE TRIGGER update_call_recordings_updated_at 
       BEFORE UPDATE ON call_recordings
       FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+    `);
+    console.log('✅ Triggers created');
 
-      -- View for call recordings with user info
-      CREATE OR REPLACE VIEW call_recordings_with_users AS
-      SELECT 
-          cr.*,
-          u.display_name as user_name,
-          u.phone_number as user_phone,
-          cs.from_user_id,
-          cs.to_user_id,
-          cs.to_phone_number,
-          cs.call_type
-      FROM call_recordings cr
-      JOIN users u ON cr.user_id = u.id
-      LEFT JOIN call_sessions cs ON cr.call_id = cs.call_id;
-
-      -- Function to get recording statistics
-      CREATE OR REPLACE FUNCTION get_recording_stats(user_uuid UUID)
-      RETURNS TABLE (
-          total_recordings BIGINT,
-          total_duration_seconds BIGINT,
-          total_file_size_bytes BIGINT,
-          avg_duration_seconds NUMERIC,
-          recordings_this_month BIGINT
-      ) AS $
-      BEGIN
-          RETURN QUERY
-          SELECT 
-              COUNT(*)::BIGINT as total_recordings,
-              COALESCE(SUM(duration_seconds), 0)::BIGINT as total_duration_seconds,
-              COALESCE(SUM(file_size_bytes), 0)::BIGINT as total_file_size_bytes,
-              COALESCE(AVG(duration_seconds), 0)::NUMERIC as avg_duration_seconds,
-              COUNT(*) FILTER (WHERE created_at >= date_trunc('month', CURRENT_TIMESTAMP))::BIGINT as recordings_this_month
-          FROM call_recordings 
-          WHERE user_id = user_uuid AND status = 'stopped';
-      END;
-      $ LANGUAGE plpgsql;
-    `;
-
-    await pool.query(createSchema);
-    console.log('✅ PostgreSQL schema created successfully');
-
+    console.log('✅ All database migrations completed successfully!');
     await pool.end();
   } catch (error) {
     console.error('❌ Migration failed:', error);

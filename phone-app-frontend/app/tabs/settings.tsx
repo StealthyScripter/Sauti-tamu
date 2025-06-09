@@ -108,7 +108,7 @@ export default function Settings() {
           
           <TouchableOpacity 
             style={mobileStyles.menuItem}
-            onPress={() => router.push('/call-quality')}
+            onPress={() => router.push('../call-quality')}
           >
             <Text style={mobileStyles.bodyText}>📞 Call Quality</Text>
             <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
@@ -128,7 +128,7 @@ export default function Settings() {
           
           <TouchableOpacity 
             style={mobileStyles.menuItem}
-            onPress={() => router.push('/help-center')}
+            onPress={() => router.push('../help-center')}
           >
             <Text style={mobileStyles.bodyText}>❓ Help Center</Text>
             <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
@@ -136,7 +136,7 @@ export default function Settings() {
           
           <TouchableOpacity 
             style={mobileStyles.menuItem}
-            onPress={() => router.push('/contact-support')}
+            onPress={() => router.push('../contact-support')}
           >
             <Text style={mobileStyles.bodyText}>📧 Contact Support</Text>
             <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
