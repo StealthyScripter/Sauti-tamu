@@ -29,13 +29,13 @@ initRedis();
 // Rate limiting for auth endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per window
+  max: 10, // 5 attempts per window
   message: 'Too many authentication attempts'
 });
 
 // More restrictive rate limiting for verification codes
 const verificationLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
+  windowMs: 20 * 60 * 1000, // 20 minutes
   max: 1, // 1 code per minute
   message: 'Please wait before requesting another verification code'
 });

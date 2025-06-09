@@ -45,7 +45,12 @@ async function initializeDatabases() {
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin:[ 
+    'http://localhost:3000',    // Original backend URL
+    'http://localhost:8081',    // Expo web development server
+    'http://localhost:19006',   // Alternative Expo port
+    'http://localhost:19000',
+    process.env.FRONTEND_URL].filter(Boolean),
   credentials: true
 }));
 
