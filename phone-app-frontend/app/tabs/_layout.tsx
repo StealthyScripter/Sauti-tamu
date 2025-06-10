@@ -1,6 +1,18 @@
 import { Tabs } from 'expo-router';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import React from 'react';
+import { Icon } from '../../components/Icon';
+
+const TabIcon = ({ emoji, focused }: { emoji: string; focused: boolean }) => (
+  <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+    <Text style={{ 
+      fontSize: 20, 
+      opacity: focused ? 1 : 0.7 
+    }}>
+      {emoji}
+    </Text>
+  </View>
+);
 
 export default function TabLayout() {
   return (
@@ -19,8 +31,8 @@ export default function TabLayout() {
         name="index" 
         options={{ 
           title: 'Dialer',
-          tabBarIcon: ({ focused, color }) => (
-            <Text style={{ fontSize: 20 }}>📞</Text>
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="📞" focused={focused} />
           )
         }} 
       />
@@ -28,8 +40,8 @@ export default function TabLayout() {
         name="recent" 
         options={{ 
           title: 'Recent',
-          tabBarIcon: ({ focused, color }) => (
-            <Text style={{ fontSize: 20 }}>🕐</Text>
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="🕐" focused={focused} />
           )
         }} 
       />
@@ -37,8 +49,8 @@ export default function TabLayout() {
         name="contacts" 
         options={{ 
           title: 'Contacts',
-          tabBarIcon: ({ focused, color }) => (
-            <Text style={{ fontSize: 20 }}>👥</Text>
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="👥" focused={focused} />
           )
         }} 
       />
@@ -46,8 +58,8 @@ export default function TabLayout() {
         name="settings" 
         options={{ 
           title: 'Settings',
-          tabBarIcon: ({ focused, color }) => (
-            <Text style={{ fontSize: 20 }}>⚙️</Text>
+          tabBarIcon: ({ focused }) => (
+            <TabIcon emoji="⚙️" focused={focused} />
           )
         }} 
       />
