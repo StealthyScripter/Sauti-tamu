@@ -1,16 +1,22 @@
 import { Tabs } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import React from 'react';
-import { Icon } from '../../components/Icon';
+import { AppIcons } from '../../components/Icons';
 
-const TabIcon = ({ emoji, focused }: { emoji: string; focused: boolean }) => (
+const TabIcon = ({ 
+  IconComponent, 
+  focused, 
+  size = 20 
+}: { 
+  IconComponent: React.ComponentType<any>; 
+  focused: boolean;
+  size?: number;
+}) => (
   <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-    <Text style={{ 
-      fontSize: 20, 
-      opacity: focused ? 1 : 0.7 
-    }}>
-      {emoji}
-    </Text>
+    <IconComponent 
+      size={size} 
+      color={focused ? '#00ff88' : '#888'} 
+    />
   </View>
 );
 
@@ -32,7 +38,7 @@ export default function TabLayout() {
         options={{ 
           title: 'Dialer',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="📞" focused={focused} />
+            <TabIcon IconComponent={AppIcons.phone} focused={focused} />
           )
         }} 
       />
@@ -41,7 +47,7 @@ export default function TabLayout() {
         options={{ 
           title: 'Recent',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🕐" focused={focused} />
+            <TabIcon IconComponent={AppIcons.recent} focused={focused} />
           )
         }} 
       />
@@ -50,7 +56,7 @@ export default function TabLayout() {
         options={{ 
           title: 'Contacts',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="👥" focused={focused} />
+            <TabIcon IconComponent={AppIcons.contacts} focused={focused} />
           )
         }} 
       />
@@ -59,7 +65,7 @@ export default function TabLayout() {
         options={{ 
           title: 'Settings',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="⚙️" focused={focused} />
+            <TabIcon IconComponent={AppIcons.settings} focused={focused} />
           )
         }} 
       />
@@ -75,7 +81,7 @@ const styles = StyleSheet.create({
     height: 85,
     paddingBottom: 8,
     paddingTop: 8,
-    maxWidth: 430, // Match mobile phone width
+    maxWidth: 430,
     alignSelf: 'center',
     width: '100%',
   },

@@ -3,6 +3,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import React, { useState, useCallback } from 'react';
 import { mobileStyles } from '../../styles/mobileStyles';
 import apiService from '../../services/apiService';
+import { AppIcons, Icon } from '../../components/Icons';
 
 interface RecentCall {
   id: string;
@@ -58,8 +59,20 @@ export default function Recent() {
     setRefreshing(false);
   };
 
-  const getCallTypeIcon = (type: 'voice' | 'video'): string => {
-    return type === 'video' ? '📹' : '📞';
+  const getCallTypeIcon = (type: 'voice' | 'video', status: string) => {
+    if (type === 'video') {
+      return <Icon library="ionicons" name="videocam" size={18} color="#fff" />;
+    }
+    
+    // Different call icons based on status
+    switch (status) {
+      case 'missed':
+        return <Icon library="ionicons" name="call" size={18} color="#ff4757" />;
+      case 'rejected':
+        return <Icon library="ionicons" name="call" size={18} color="#ff6b6b" />;
+      default:
+        return <AppIcons.phone size={18} color="#00ff88" />;
+    }
   };
 
   const getCallTypeColor = (status: string): string => {
@@ -139,7 +152,10 @@ export default function Recent() {
       
       {/* API Status */}
       <View style={mobileStyles.infoCard}>
-        <Text style={mobileStyles.bodyTextBold}>📊 Call History</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <Icon library="ionicons" name="stats-chart" size={20} color="#00ff88" />
+          <Text style={mobileStyles.bodyTextBold}>Call History</Text>
+        </View>
         <Text style={mobileStyles.greenText}>Live data from backend</Text>
         <Text style={mobileStyles.smallText}>
           {recentCalls.length} calls loaded from database
@@ -156,7 +172,10 @@ export default function Recent() {
             style={[mobileStyles.primaryButton, { marginTop: 16 }]}
             onPress={() => router.push('/tabs')}
           >
-            <Text style={{ color: '#000', fontWeight: 'bold' }}>Make Your First Call</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <AppIcons.phone size={18} color="#000" />
+              <Text style={{ color: '#000', fontWeight: 'bold' }}>Make Your First Call</Text>
+            </View>
           </TouchableOpacity>
         </View>
       ) : (
@@ -174,24 +193,25 @@ export default function Recent() {
           renderItem={({ item }) => (
             <View style={mobileStyles.card}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={mobileStyles.bodyTextBold}>
-                    {getCallTypeIcon(item.callType)} {item.toPhoneNumber}
-                  </Text>
-                  <Text style={[mobileStyles.smallText, { color: getCallTypeColor(item.status) }]}>
-                    {getCallDirection(item)} • {item.status}
-                  </Text>
-                  <Text style={mobileStyles.greenText}>
-                    {formatCallTime(item.startTime)}
-                    {item.duration && ` • ${formatDuration(item.duration)}`}
-                  </Text>
+                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  {getCallTypeIcon(item.callType, item.status)}
+                  <View style={{ flex: 1 }}>
+                    <Text style={mobileStyles.bodyTextBold}>{item.toPhoneNumber}</Text>
+                    <Text style={[mobileStyles.smallText, { color: getCallTypeColor(item.status) }]}>
+                      {getCallDirection(item)} • {item.status}
+                    </Text>
+                    <Text style={mobileStyles.greenText}>
+                      {formatCallTime(item.startTime)}
+                      {item.duration && ` • ${formatDuration(item.duration)}`}
+                    </Text>
+                  </View>
                 </View>
                 
                 <TouchableOpacity
                   style={[mobileStyles.callControlButton, { backgroundColor: '#00ff88' }]}
                   onPress={() => handleCallBack(item.toPhoneNumber)}
                 >
-                  <Text style={{ fontSize: 20 }}>📞</Text>
+                  <AppIcons.phone size={20} color="#000" />
                 </TouchableOpacity>
               </View>
             </View>

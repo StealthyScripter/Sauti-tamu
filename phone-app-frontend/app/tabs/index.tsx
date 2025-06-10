@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { mobileStyles } from "../../styles/mobileStyles";
 import { useAuth } from "../../context/AuthContext";
 import apiService from "../../services/apiService";
+import { AppIcons, Icon } from "../../components/Icons";
 
 export default function DialerScreen() {
   const router = useRouter();
@@ -63,7 +64,6 @@ export default function DialerScreen() {
       Alert.alert('Error', 'Network error. Please check your connection and try again.');
     } finally {
       setCalling(false);
-
     }
   };
 
@@ -105,7 +105,7 @@ export default function DialerScreen() {
         </Text>
         {number ? (
           <TouchableOpacity style={mobileStyles.deleteButton} onPress={deleteDigit}>
-            <Text style={mobileStyles.deleteText}>⌫</Text>
+            <Icon library="ionicons" name="backspace" size={20} color="#00ff88" />
           </TouchableOpacity>
         ) : null}
       </View>
@@ -113,7 +113,10 @@ export default function DialerScreen() {
       {/* AI Routing Info */}
       {number && (
         <View style={mobileStyles.infoCard}>
-          <Text style={mobileStyles.bodyTextBold}>🤖 AI Route Analysis</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <AppIcons.aiRouting size={20} />
+            <Text style={mobileStyles.bodyTextBold}>AI Route Analysis</Text>
+          </View>
           <Text style={mobileStyles.greenText}>
             Backend connected • Optimizing route...
           </Text>
@@ -146,7 +149,6 @@ export default function DialerScreen() {
       <TouchableOpacity 
         style={[
           mobileStyles.callButton,
-
           (!number || calling) && { backgroundColor: '#666' }
         ]} 
         onPress={makeCall}
@@ -160,14 +162,16 @@ export default function DialerScreen() {
             </Text>
           </View>
         ) : (
-          <Text style={[
-            { color: '#000', fontWeight: 'bold', fontSize: 18 },
-            (!number) && { color: '#ccc' }
-          ]}>
-            📞 Call
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <AppIcons.phone size={18} color={number ? "#000" : "#ccc"} />
+            <Text style={[
+              { fontWeight: 'bold', fontSize: 18 },
+              number ? { color: '#000' } : { color: '#ccc' }
+            ]}>
+              Call
+            </Text>
+          </View>
         )}
-
       </TouchableOpacity>
 
       {/* Quick access buttons */}
@@ -176,13 +180,19 @@ export default function DialerScreen() {
           style={mobileStyles.secondaryButton}
           onPress={() => router.push('/tabs/contacts')}
         >
-          <Text style={mobileStyles.whiteText}>👥 Contacts</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <AppIcons.contacts size={18} color="#fff" />
+            <Text style={mobileStyles.whiteText}>Contacts</Text>
+          </View>
         </TouchableOpacity>
         <TouchableOpacity 
           style={mobileStyles.secondaryButton}
           onPress={() => router.push('/tabs/recent')}
         >
-          <Text style={mobileStyles.whiteText}>🕐 Recent</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <AppIcons.recent size={18} color="#fff" />
+            <Text style={mobileStyles.whiteText}>Recent</Text>
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -192,7 +202,10 @@ export default function DialerScreen() {
           style={[mobileStyles.secondaryButton, { marginTop: 10 }]}
           onPress={testConnection}
         >
-          <Text style={mobileStyles.whiteText}>🧪 Test Backend Connection</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Icon library="ionicons" name="flask" size={18} color="#fff" />
+            <Text style={mobileStyles.whiteText}>Test Backend Connection</Text>
+          </View>
         </TouchableOpacity>
       )}
     </View>

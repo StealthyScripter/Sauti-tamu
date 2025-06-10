@@ -3,6 +3,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import React, { useState, useCallback } from 'react';
 import { mobileStyles } from '../../styles/mobileStyles';
 import apiService from '../../services/apiService';
+import { AppIcons, Icon } from '../../components/Icons';
 
 interface Contact {
   _id: string;
@@ -93,13 +94,19 @@ export default function Contacts() {
           style={[mobileStyles.primaryButton, { flex: 0, paddingHorizontal: 20 }]}
           onPress={navigateToAddContact}
         >
-          <Text style={{ color: '#000', fontWeight: 'bold' }}>+ Add</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <AppIcons.add size={18} color="#000" />
+            <Text style={{ color: '#000', fontWeight: 'bold' }}>Add</Text>
+          </View>
         </TouchableOpacity>
       </View>
 
       {/* Connection Status */}
       <View style={mobileStyles.infoCard}>
-        <Text style={mobileStyles.bodyTextBold}>📡 API Status</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <Icon library="ionicons" name="radio" size={20} color="#00ff88" />
+          <Text style={mobileStyles.bodyTextBold}>API Status</Text>
+        </View>
         <Text style={mobileStyles.greenText}>Connected to backend</Text>
         <Text style={mobileStyles.smallText}>
           {contacts.length} contacts loaded from database
@@ -116,8 +123,10 @@ export default function Contacts() {
             style={[mobileStyles.primaryButton, { marginTop: 16 }]}
             onPress={navigateToAddContact}
           >
-            <Text style={{ color: '#000', fontWeight: 'bold' }}>Add First Contact</Text>
-
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <AppIcons.add size={18} color="#000" />
+              <Text style={{ color: '#000', fontWeight: 'bold' }}>Add First Contact</Text>
+            </View>
           </TouchableOpacity>
         </View>
       ) : (
@@ -146,7 +155,7 @@ export default function Contacts() {
                 <Text style={mobileStyles.bodyTextBold}>{item.displayName}</Text>
                 <Text style={mobileStyles.smallText}>{item.phoneNumber}</Text>
               </View>
-              <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+              <AppIcons.chevronRight size={18} color="#888" />
             </TouchableOpacity>
           )}
         />

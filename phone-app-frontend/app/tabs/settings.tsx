@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { mobileStyles } from '../../styles/mobileStyles';
 import { useAuth } from '../../context/AuthContext';
+import { AppIcons, Icon } from '../../components/Icons';
 
 export default function Settings() {
   const router = useRouter();
@@ -51,7 +52,6 @@ export default function Settings() {
               console.error('❌ Logout error:', error);
               Alert.alert('Error', 'Failed to sign out. Please try again.');
             }
-
           }
         }
       ]
@@ -66,9 +66,13 @@ export default function Settings() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={mobileStyles.header}>Settings</Text>
+        
         {/* User Info */}
         <View style={mobileStyles.infoCard}>
-          <Text style={mobileStyles.bodyTextBold}>👤 Logged in as</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <AppIcons.profile size={20} color="#00ff88" />
+            <Text style={mobileStyles.bodyTextBold}>Logged in as</Text>
+          </View>
           <Text style={mobileStyles.greenText}>{user?.displayName || 'User'}</Text>
           <Text style={mobileStyles.smallText}>{user?.phoneNumber}</Text>
         </View>
@@ -95,31 +99,41 @@ export default function Settings() {
             style={mobileStyles.menuItem}
             onPress={() => router.push('/profile')}
           >
-            <Text style={mobileStyles.bodyText}>👤 Profile</Text>
-
-            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <AppIcons.profile size={20} color="#fff" />
+              <Text style={mobileStyles.bodyText}>Profile</Text>
+            </View>
+            <AppIcons.chevronRight size={18} color="#888" />
           </TouchableOpacity>
           
           <TouchableOpacity style={mobileStyles.menuItem}>
-
-            <Text style={mobileStyles.bodyText}>💳 Billing & Usage</Text>
-            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Icon library="ionicons" name="card" size={20} color="#fff" />
+              <Text style={mobileStyles.bodyText}>Billing & Usage</Text>
+            </View>
+            <AppIcons.chevronRight size={18} color="#888" />
           </TouchableOpacity>
           
           <TouchableOpacity 
             style={mobileStyles.menuItem}
             onPress={() => router.push('../call-quality')}
           >
-            <Text style={mobileStyles.bodyText}>📞 Call Quality</Text>
-            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <AppIcons.quality size={20} />
+              <Text style={mobileStyles.bodyText}>Call Quality</Text>
+            </View>
+            <AppIcons.chevronRight size={18} color="#888" />
           </TouchableOpacity>
 
           <TouchableOpacity 
             style={mobileStyles.menuItem}
             onPress={handleSignOut}
           >
-            <Text style={[mobileStyles.bodyText, { color: '#ff4757' }]}>🚪 Sign Out</Text>
-            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <AppIcons.logout size={20} />
+              <Text style={[mobileStyles.bodyText, { color: '#ff4757' }]}>Sign Out</Text>
+            </View>
+            <AppIcons.chevronRight size={18} color="#888" />
           </TouchableOpacity>
         </View>
 
@@ -130,21 +144,30 @@ export default function Settings() {
             style={mobileStyles.menuItem}
             onPress={() => router.push('../help-center')}
           >
-            <Text style={mobileStyles.bodyText}>❓ Help Center</Text>
-            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <AppIcons.help size={20} color="#fff" />
+              <Text style={mobileStyles.bodyText}>Help Center</Text>
+            </View>
+            <AppIcons.chevronRight size={18} color="#888" />
           </TouchableOpacity>
           
           <TouchableOpacity 
             style={mobileStyles.menuItem}
             onPress={() => router.push('../contact-support')}
           >
-            <Text style={mobileStyles.bodyText}>📧 Contact Support</Text>
-            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <AppIcons.support size={20} color="#fff" />
+              <Text style={mobileStyles.bodyText}>Contact Support</Text>
+            </View>
+            <AppIcons.chevronRight size={18} color="#888" />
           </TouchableOpacity>
           
           <TouchableOpacity style={mobileStyles.menuItem}>
-            <Text style={mobileStyles.bodyText}>⭐ Rate App</Text>
-            <Text style={[mobileStyles.smallText, { fontSize: 18 }]}>›</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Icon library="ionicons" name="star" size={20} color="#fff" />
+              <Text style={mobileStyles.bodyText}>Rate App</Text>
+            </View>
+            <AppIcons.chevronRight size={18} color="#888" />
           </TouchableOpacity>
         </View>
 
