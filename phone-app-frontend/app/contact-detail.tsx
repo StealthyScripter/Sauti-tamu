@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, TextInput, ScrollView, Alert } from 'reac
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import React from 'react';
 import { mobileStyles } from '../styles/mobileStyles';
+import { AppIcons } from '../components/Icons';
 
 // Helper function to ensure string type from params
 const getStringParam = (param: string | string[] | undefined): string => {
@@ -86,10 +87,16 @@ export default function ContactDetail() {
 
         <View style={mobileStyles.buttonRow}>
           <TouchableOpacity style={mobileStyles.primaryButton} onPress={handleCall}>
-            <Text style={mobileStyles.whiteText}>📞 Call</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <AppIcons.phone size={18} color="#000" />
+              <Text style={{ color: '#000', fontWeight: 'bold' }}>Call</Text>
+            </View>
           </TouchableOpacity>
           <TouchableOpacity style={mobileStyles.secondaryButton} onPress={handleMessage}>
-            <Text style={mobileStyles.whiteText}>💬 Message</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <AppIcons.message size={18} color="#fff" />
+              <Text style={mobileStyles.whiteText}>Message</Text>
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -104,17 +111,26 @@ export default function ContactDetail() {
         </View>
 
         <View style={mobileStyles.infoCard}>
-          <Text style={mobileStyles.bodyTextBold}>AI Route Optimization</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <AppIcons.aiRouting size={20} />
+            <Text style={mobileStyles.bodyTextBold}>AI Route Optimization</Text>
+          </View>
           <Text style={mobileStyles.greenText}>Current best rate: {contact.savings}</Text>
           <Text style={mobileStyles.smallText}>{contact.carrier} • {contact.quality} • {contact.uptime}</Text>
         </View>
 
         <View style={mobileStyles.buttonRow}>
           <TouchableOpacity style={mobileStyles.primaryButton} onPress={handleEdit}>
-            <Text style={mobileStyles.whiteText}>✏️ Edit</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <AppIcons.edit size={18} color="#000" />
+              <Text style={{ color: '#000', fontWeight: 'bold' }}>Edit</Text>
+            </View>
           </TouchableOpacity>
           <TouchableOpacity style={mobileStyles.secondaryButton} onPress={handleDelete}>
-            <Text style={mobileStyles.whiteText}>🗑 Delete</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <AppIcons.delete size={18} />
+              <Text style={mobileStyles.whiteText}>Delete</Text>
+            </View>
           </TouchableOpacity>
         </View>
       </ScrollView>
