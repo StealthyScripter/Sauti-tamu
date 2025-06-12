@@ -1,54 +1,44 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { body, validationResult } from 'express-validator';
-import redis from 'redis';
+import redis from '../config/redis.js';
 import authService from '../services/authService.js';
 import phoneVerificationService from '../services/productionPhoneService.js';
 
-
 const router = express.Router();
 
-// Redis client setup
-const redisClient = redis.createClient({ 
-  url: process.env.REDIS_URI || 'redis://localhost:6379'
+// Fixed rate limiting - more reasonable limits
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts per window (increased from too restrictive)
+  message: 'Too many authentication attempts, please try again in 15 minutes'
 });
 
-// Initialize Redis connection
-async function initRedis() {
+// Fixed verification rate limiting
+const verificationLimiter = rateLimit({
+  windowMs: 2 * 60 * 1000, // 2 minutes (reduced from 20 minutes)
+  max: 2, // 2 codes per 2 minutes (increased from 1 per 20 minutes)
+  message: 'Please wait 2 minutes before requesting another verification code'
+});
+
+// Enhanced Redis connection check
+async function ensureRedisConnection() {
   try {
-    await redisClient.connect();
-    console.log('✅ Redis connected for auth routes');
+    await redis.ping();
+    return true;
   } catch (error) {
-    console.error('❌ Redis connection failed:', error);
+    console.error('❌ Redis connection failed in auth routes:', error);
+    throw new Error('Authentication service temporarily unavailable');
   }
 }
 
-// Initialize when module loads
-initRedis();
-
-// Rate limiting for auth endpoints
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 5 attempts per window
-  message: 'Too many authentication attempts'
-});
-
-// More restrictive rate limiting for verification codes
-const verificationLimiter = rateLimit({
-  windowMs: 20 * 60 * 1000, // 20 minutes
-  max: 1, // 1 code per minute
-  message: 'Please wait before requesting another verification code'
-});
-
-// Send verification code
+// Send verification code with proper error handling
 router.post('/verify-phone',
   verificationLimiter,
   [
     body('phoneNumber')
       .custom((value) => {
-        // Remove all non-digit characters except +
         const cleaned = value.replace(/[^\d+]/g, '');
-        // Check if it's a valid phone number format
         if (!/^\+?[1-9]\d{6,14}$/.test(cleaned)) {
           throw new Error('Valid phone number required (6-15 digits, optionally starting with +)');
         }
@@ -66,6 +56,9 @@ router.post('/verify-phone',
         });
       }
 
+      // Check Redis connection before proceeding
+      await ensureRedisConnection();
+
       const { phoneNumber } = req.body;
       const normalizedPhone = authService.normalizePhoneNumber(phoneNumber);
       
@@ -76,11 +69,24 @@ router.post('/verify-phone',
         message: result.message,
         data: {
           phoneNumber: normalizedPhone,
-          expiresIn: 600 // 10 minutes
+          expiresIn: 600,
+          ...(process.env.NODE_ENV === 'development' && result.data?._testCode && { 
+            _testCode: result.data._testCode 
+          })
         }
       });
     } catch (error) {
       console.error('Phone verification error:', error);
+      
+      // Enhanced error responses
+      if (error.message.includes('Authentication service')) {
+        return res.status(503).json({
+          success: false,
+          message: 'Authentication service temporarily unavailable',
+          error: 'SERVICE_UNAVAILABLE'
+        });
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Failed to send verification code',
@@ -90,15 +96,13 @@ router.post('/verify-phone',
   }
 );
 
-// POST /api/auth/login - Updated to include code verification
+// Login with enhanced error handling
 router.post('/login', 
   authLimiter,
   [
     body('phoneNumber')
       .custom((value) => {
-        // Remove all non-digit characters except +
         const cleaned = value.replace(/[^\d+]/g, '');
-        // Check if it's a valid phone number format
         if (!/^\+?[1-9]\d{6,14}$/.test(cleaned)) {
           throw new Error('Valid phone number required (6-15 digits, optionally starting with +)');
         }
@@ -121,6 +125,9 @@ router.post('/login',
         });
       }
 
+      // Check Redis connection
+      await ensureRedisConnection();
+
       const { phoneNumber, verificationCode, displayName } = req.body;
       const normalizedPhone = authService.normalizePhoneNumber(phoneNumber);
       
@@ -130,7 +137,8 @@ router.post('/login',
       if (!verificationResult.success) {
         return res.status(400).json({
           success: false,
-          message: verificationResult.message
+          message: verificationResult.message,
+          error: 'VERIFICATION_FAILED'
         });
       }
       
@@ -143,8 +151,13 @@ router.post('/login',
       
       const token = await authService.generateToken(user.id);
       
-      // Store token in Redis
-      await redisClient.setEx(`token:${user.id}`, 86400, token); // 24 hours
+      // Store token in Redis with proper error handling
+      try {
+        await redis.setEx(`token:${user.id}`, 86400, token); // 24 hours
+      } catch (redisError) {
+        console.error('❌ Failed to store token in Redis:', redisError);
+        // Continue without storing in Redis - not critical for immediate auth
+      }
       
       res.json({
         success: true,
@@ -159,6 +172,16 @@ router.post('/login',
       });
     } catch (error) {
       console.error('Login error:', error);
+      
+      // Enhanced error handling
+      if (error.message.includes('Database error')) {
+        return res.status(503).json({
+          success: false,
+          message: 'Database temporarily unavailable',
+          error: 'DATABASE_ERROR'
+        });
+      }
+      
       res.status(500).json({
         success: false,
         message: 'Authentication failed',
@@ -168,22 +191,32 @@ router.post('/login',
   }
 );
 
+// Enhanced logout with error handling
 router.post('/logout', async (req, res) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (token) {
-      const decoded = await authService.validateToken(token);
-      await redisClient.del(`token:${decoded.userId}`);
+      try {
+        const decoded = await authService.validateToken(token);
+        await redis.del(`token:${decoded.userId}`);
+      } catch (error) {
+        console.error('❌ Error during logout cleanup:', error);
+        // Continue with logout even if cleanup fails
+      }
     }
     
     res.json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
     console.error('Logout error:', error);
-    res.status(500).json({ success: false, message: 'Logout failed' });
+    res.status(500).json({ 
+      success: false, 
+      message: 'Logout failed',
+      error: 'LOGOUT_ERROR'
+    });
   }
 });
 
-// Test endpoint to verify routes work
+// Test endpoint remains the same
 router.get('/test', (req, res) => {
   res.json({ 
     message: 'Auth routes working!', 

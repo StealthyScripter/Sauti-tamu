@@ -1,9 +1,9 @@
 import { Stack } from 'expo-router';
 import { View, StyleSheet } from 'react-native';
 import { AuthProvider } from '../context/AuthContext';
+import { CallProvider } from '../context/CallContext'; 
 
 function RootLayoutNav() {
-  // Remove auth check from here - handle it in index.tsx only
   return (
     <View style={styles.container}>
       <Stack screenOptions={{
@@ -17,6 +17,7 @@ function RootLayoutNav() {
         <Stack.Screen name="add-contacts" options={{ headerShown: false }} />
         <Stack.Screen name="active-call" options={{ headerShown: false }} />
         <Stack.Screen name="profile" options={{ headerShown: false }} />
+        <Stack.Screen name="incoming-call" options={{ headerShown: false }} />
       </Stack>
     </View>
   );
@@ -25,7 +26,9 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <CallProvider>
+        <RootLayoutNav />
+      </CallProvider>
     </AuthProvider>
   );
 }
