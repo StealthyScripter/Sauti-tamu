@@ -4,10 +4,25 @@ class ApiService {
   constructor() {
     this.baseURL = API_CONFIG.BASE_URL;
     this.headers = { ...API_CONFIG.DEFAULT_HEADERS };
+    this.failureCount = 0;
+    this.lastFailureTime = null;
+    this.circuitOpen = false;
+    this.circuitTimeout = 30000;
   }
 
   // Enhanced request method with retry logic
   async request(endpoint, options = {}) {
+    // Check circuit breaker
+    if (this.circuitOpen) {
+      if (Date.now() - this.lastFailureTime > this.circuitTimeout) {
+        this.circuitOpen = false;
+        this.failureCount = 0;
+        console.log('🔄 Circuit breaker reset');
+      } else {
+        throw new Error('Service temporarily unavailable - circuit breaker open');
+      }
+    }
+
     const url = buildApiUrl(endpoint);
     const config = {
       headers: this.headers,
@@ -42,21 +57,37 @@ class ApiService {
             errorData = { message: errorText };
           }
           
-          throw new Error(`HTTP ${response.status}: ${errorData.message || 'Request failed'}`);
+          const error = new Error(`HTTP ${response.status}: ${errorData.message || 'Request failed'}`);
+          error.status = response.status;
+          error.response = errorData;
+
+          if (response.status >= 400 && response.status < 500) {
+            console.error(`❌ Client error ${response.status}, not retrying`);
+            this.handleSuccess(); // Reset circuit breaker for client errors
+            throw error;
+          }
+
+          throw error;
+
         }
         
         const data = await response.json();
         console.log(`✅ API Response (attempt ${attempt}):`, data);
+
+        //reset failure count on success
+        this.handleSuccess();
         return data;
         
       } catch (error) {
         lastError = error;
         console.error(`❌ API Request failed (attempt ${attempt}):`, error);
         
-        // Don't retry on client errors (4xx)
-        if (error.message.includes('HTTP 4')) {
-          throw error;
+        // Don't retry on client errors or abort errors
+        if (error.name === 'AbortError' || (error.status >= 400 && error.status < 500)) {
+          break;
         }
+
+        this.handleFailure();
         
         // Wait before retry (exponential backoff)
         if (attempt < maxRetries) {
@@ -68,6 +99,22 @@ class ApiService {
     }
     
     throw lastError;
+  }
+
+  //Circuit breaker methods
+  handleSuccess () {
+    this.failureCount = 0;
+    this.circuitOpen = false;
+  }
+
+  handleFailure() {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+
+    if (this.failureCount >= 5) {
+      this.circuitOpen = true;
+      console.warn('⚠️ Circuit breaker opened due to repeated failures');
+    }    
   }
 
   // Authentication methods with enhanced error handling

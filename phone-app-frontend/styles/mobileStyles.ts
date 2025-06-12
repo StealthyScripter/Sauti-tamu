@@ -393,6 +393,56 @@ export const mobileStyles = StyleSheet.create({
     textAlign: 'center',
     marginTop: Math.min(containerHeight * 0.026, 24),
   },
+
+  // ADD THESE NEW STYLES:
+  textButton: {
+    padding: Math.min(containerHeight * 0.017, 16),
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    borderRadius: 8,
+  },
+
+  linkText: {
+    color: '#00ff88',
+    fontSize: Math.min(containerWidth * 0.033, containerHeight * 0.015, 14),
+    textDecorationLine: 'underline',
+  },
+   incomingCallButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    width: '100%',
+    marginTop: Math.min(containerHeight * 0.043, 40),
+    paddingHorizontal: Math.min(containerWidth * 0.093, 40),
+  },
+
+  declineButton: {
+    width: Math.min(containerWidth * 0.186, containerHeight * 0.086, 80),
+    height: Math.min(containerWidth * 0.186, containerHeight * 0.086, 80),
+    borderRadius: Math.min(containerWidth * 0.093, containerHeight * 0.043, 40),
+    backgroundColor: '#ff4757',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: '#ff4757',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+
+  answerButton: {
+    width: Math.min(containerWidth * 0.186, containerHeight * 0.086, 80),
+    height: Math.min(containerWidth * 0.186, containerHeight * 0.086, 80),
+    borderRadius: Math.min(containerWidth * 0.093, containerHeight * 0.043, 40),
+    backgroundColor: '#00ff88',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: '#00ff88',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
 });
 
 export default mobileStyles;
