@@ -186,7 +186,7 @@ export default function AuthScreen() {
             style={[mobileStyles.textButton, { marginTop: 16 }]}
             onPress={handleSendCode}
           >
-            <Text style={mobileStyles.linkText}>Didn't receive code? Resend</Text>
+            <Text style={mobileStyles.linkText}>Didn`&apos;`t receive code? Resend</Text>
           </TouchableOpacity>
         </>
       )}
