@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { API_CONFIG } from '../api-config';
@@ -24,13 +24,80 @@ interface CallContextType {
 const CallContext = createContext<CallContextType | null>(null);
 
 export const CallProvider = ({ children }: { children: ReactNode }) => {
-  const { token, user } = useAuth();
+  const { token, user, isAuthenticated } = useAuth();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [incomingCall, setIncomingCall] = useState<CallData | null>(null);
   const [isConnected, setIsConnected] = useState(false);
 
+  // FIX: Memoize handlers to prevent recreation on every render
+  const handleConnect = useCallback(() => {
+    console.log('✅ WebSocket connected');
+    setIsConnected(true);
+  }, []);
+
+  const handleDisconnect = useCallback(() => {
+    console.log('❌ WebSocket disconnected');
+    setIsConnected(false);
+  }, []);
+
+  const handleConnectError = useCallback((error: any) => {
+    console.error('❌ WebSocket connection error:', error);
+    setIsConnected(false);
+  }, []);
+
+  const handleIncomingCall = useCallback((callData: CallData) => {
+    console.log('📞 Incoming call received:', callData);
+    setIncomingCall(callData);
+    
+    Alert.alert(
+      'Incoming Call',
+      `${callData.fromDisplayName} is calling...`,
+      [
+        {
+          text: 'Decline',
+          onPress: () => rejectCall(callData.callId),
+          style: 'cancel'
+        },
+        {
+          text: 'Accept',
+          onPress: () => acceptCall(callData.callId)
+        }
+      ],
+      { cancelable: false }
+    );
+  }, []);
+
+  const handleCallStatusChange = useCallback((data: any) => {
+    console.log('📞 Call status change:', data);
+    
+    switch (data.status) {
+      case 'ended':
+        Alert.alert('Call Ended', data.message || 'Call has ended');
+        setIncomingCall(null);
+        break;
+      case 'rejected':
+        Alert.alert('Call Declined', data.message || 'Call was declined');
+        setIncomingCall(null);
+        break;
+      case 'active':
+        console.log('📞 Call is now active');
+        break;
+      case 'recording_started':
+        Alert.alert('Recording Started', 'This call is now being recorded');
+        break;
+      case 'recording_stopped':
+        Alert.alert('Recording Stopped', 'Call recording has stopped');
+        break;
+    }
+  }, []);
+
+  const handleUserStatusChange = useCallback((data: any) => {
+    console.log('👤 User status change:', data);
+  }, []);
+
   useEffect(() => {
-    if (token && user) {
+    // FIX: Only connect when fully authenticated
+    if (isAuthenticated && token && user) {
       console.log('🔌 Connecting to WebSocket...');
       
       const newSocket = io(API_CONFIG.BASE_URL, {
@@ -40,116 +107,76 @@ export const CallProvider = ({ children }: { children: ReactNode }) => {
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
+        timeout: 20000,
       });
 
+      // Add event listeners
+      newSocket.on('connect', handleConnect);
+      newSocket.on('disconnect', handleDisconnect);
+      newSocket.on('connect_error', handleConnectError);
+      newSocket.on('incoming_call', handleIncomingCall);
+      newSocket.on('call_status_change', handleCallStatusChange);
+      newSocket.on('user_status_change', handleUserStatusChange);
+
+      // Send user online status after connection
       newSocket.on('connect', () => {
-        console.log('✅ WebSocket connected');
-        setIsConnected(true);
-        
-        // Send user online status
         newSocket.emit('user_online');
-      });
-
-      newSocket.on('disconnect', () => {
-        console.log('❌ WebSocket disconnected');
-        setIsConnected(false);
-      });
-
-      newSocket.on('connect_error', (error) => {
-        console.error('❌ WebSocket connection error:', error);
-        setIsConnected(false);
-      });
-
-      // Handle incoming calls
-      newSocket.on('incoming_call', (callData: CallData) => {
-        console.log('📞 Incoming call received:', callData);
-        setIncomingCall(callData);
-        
-        // Show incoming call UI
-        Alert.alert(
-          'Incoming Call',
-          `${callData.fromDisplayName} is calling...`,
-          [
-            {
-              text: 'Decline',
-              onPress: () => rejectCall(callData.callId),
-              style: 'cancel'
-            },
-            {
-              text: 'Accept',
-              onPress: () => acceptCall(callData.callId)
-            }
-          ],
-          { cancelable: false }
-        );
-      });
-
-      // Handle call status changes
-      newSocket.on('call_status_change', (data) => {
-        console.log('📞 Call status change:', data);
-        
-        switch (data.status) {
-          case 'ended':
-            Alert.alert('Call Ended', data.message || 'Call has ended');
-            setIncomingCall(null);
-            break;
-          case 'rejected':
-            Alert.alert('Call Declined', data.message || 'Call was declined');
-            setIncomingCall(null);
-            break;
-          case 'active':
-            console.log('📞 Call is now active');
-            break;
-          case 'recording_started':
-            Alert.alert('Recording Started', 'This call is now being recorded');
-            break;
-          case 'recording_stopped':
-            Alert.alert('Recording Stopped', 'Call recording has stopped');
-            break;
-        }
-      });
-
-      // Handle user status changes
-      newSocket.on('user_status_change', (data) => {
-        console.log('👤 User status change:', data);
       });
 
       setSocket(newSocket);
 
+      // FIX: Proper cleanup function
       return () => {
         console.log('🔌 Cleaning up WebSocket connection');
+        
+        // Remove all event listeners
+        newSocket.off('connect', handleConnect);
+        newSocket.off('disconnect', handleDisconnect);
+        newSocket.off('connect_error', handleConnectError);
+        newSocket.off('incoming_call', handleIncomingCall);
+        newSocket.off('call_status_change', handleCallStatusChange);
+        newSocket.off('user_status_change', handleUserStatusChange);
+        
+        // Disconnect socket
         newSocket.disconnect();
         setSocket(null);
         setIsConnected(false);
       };
+    } else {
+      // Clean up if not authenticated
+      if (socket) {
+        socket.disconnect();
+        setSocket(null);
+        setIsConnected(false);
+      }
     }
-  }, [token, user]);
+  }, [isAuthenticated, token, user, 
+      handleConnect, handleDisconnect, handleConnectError, 
+      handleIncomingCall, handleCallStatusChange, handleUserStatusChange]);
 
-  const acceptCall = async (callId: string) => {
+  const acceptCall = useCallback(async (callId: string) => {
     try {
       console.log('✅ Accepting call:', callId);
-      // Will be handled by API call in the component
       setIncomingCall(null);
     } catch (error) {
       console.error('❌ Error accepting call:', error);
       Alert.alert('Error', 'Failed to accept call');
     }
-  };
+  }, []);
 
-  const rejectCall = async (callId: string) => {
+  const rejectCall = useCallback(async (callId: string) => {
     try {
       console.log('❌ Rejecting call:', callId);
-      // Will be handled by API call in the component  
       setIncomingCall(null);
     } catch (error) {
       console.error('❌ Error rejecting call:', error);
       Alert.alert('Error', 'Failed to reject call');
     }
-  };
+  }, []);
 
-  const clearIncomingCall = () => {
+  const clearIncomingCall = useCallback(() => {
     setIncomingCall(null);
-  };
+  }, []);
 
   return (
     <CallContext.Provider value={{

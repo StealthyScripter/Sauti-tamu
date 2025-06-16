@@ -36,9 +36,18 @@ const server = createServer(app);
 // Initialize database connections
 async function initializeDatabases() {
   try {
+    console.log('🔄 Initializing database connections...');
     await connectMongoDB();
+    console.log('✅ All databases connected successfully');
   } catch (error) {
-    console.log('⚠️ Failed to connect to databases, continuing anyway...');
+    console.error('❌ Critical: Database connection failed:', error);
+    // FIX: Fail fast for critical database issues
+    if (process.env.NODE_ENV === 'production') {
+      console.error('💥 Exiting due to database connection failure in production');
+      process.exit(1);
+    } else {
+      console.log('⚠️ Continuing in development mode without some databases...');
+    }
   }
 }
 

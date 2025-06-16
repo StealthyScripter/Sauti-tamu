@@ -7,18 +7,20 @@ import { AppIcons, Icon } from '../components/Icons';
 
 export default function AuthScreen() {
   const router = useRouter();
-  const { login, user, isLoading } = useAuth();
+  const { login, user, isLoading, isInitialized } = useAuth();
+
   const [phoneNumber, setPhoneNumber] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [step, setStep] = useState<'phone' | 'verify'>('phone');
   const [loading, setLoading] = useState(false);
 
-  // Redirect if already authenticated
+  // FIX #1: Add router to dependency array
   useEffect(() => {
-    if (user) {
+    if (isInitialized && user) {
+      console.log('✅ User authenticated, redirecting to tabs');
       router.replace('/tabs');
     }
-  }, [user]);
+  }, [user, isInitialized, router]); // Added router
 
   const handleSendCode = async () => {
     if (!phoneNumber.trim()) {
@@ -60,11 +62,11 @@ export default function AuthScreen() {
     }
   };
 
-  if (isLoading) {
+  if (!isInitialized || isLoading) {
     return (
       <View style={[mobileStyles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <ActivityIndicator size="large" color="#00ff88" />
-        <Text style={[mobileStyles.bodyText, { marginTop: 16 }]}>Loading...</Text>
+        <Text style={[mobileStyles.bodyText, { marginTop: 16 }]}>Initializing...</Text>
       </View>
     );
   }
@@ -182,11 +184,12 @@ export default function AuthScreen() {
             </View>
           </TouchableOpacity>
 
+          {/* FIX #2: Replace textButton with secondaryButton and linkText with greenText */}
           <TouchableOpacity 
-            style={[mobileStyles.textButton, { marginTop: 16 }]}
+            style={[mobileStyles.secondaryButton, { marginTop: 16, backgroundColor: 'transparent' }]}
             onPress={handleSendCode}
           >
-            <Text style={mobileStyles.linkText}>Didn`&apos;`t receive code? Resend</Text>
+            <Text style={mobileStyles.greenText}>Didn`&#39;`t receive code? Resend</Text>
           </TouchableOpacity>
         </>
       )}
@@ -195,9 +198,10 @@ export default function AuthScreen() {
       <View style={{ marginTop: 30, paddingHorizontal: 20 }}>
         <Text style={[mobileStyles.smallText, { textAlign: 'center', lineHeight: 18 }]}>
           By continuing, you agree to our{' '}
-          <Text style={mobileStyles.linkText}>Terms of Service</Text>
+          {/* FIX #3: Replace linkText with greenText */}
+          <Text style={mobileStyles.greenText}>Terms of Service</Text>
           {' '}and{' '}
-          <Text style={mobileStyles.linkText}>Privacy Policy</Text>
+          <Text style={mobileStyles.greenText}>Privacy Policy</Text>
         </Text>
       </View>
     </View>
