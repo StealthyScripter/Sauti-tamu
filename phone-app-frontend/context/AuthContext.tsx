@@ -13,6 +13,7 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isInitialized: boolean; // ADD THIS
   sendVerificationCode: (phoneNumber: string) => Promise<any>;
   login: (phoneNumber: string, verificationCode: string, displayName?: string) => Promise<any>;
   logout: () => Promise<void>;
@@ -23,10 +24,11 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // Start with loading true
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false); // ADD THIS
 
-  const isAuthenticated = !!(user && token && isInitialized);
+  // FIX: Proper authentication state calculation
+  const isAuthenticated = isInitialized && !!(user && token);
 
   // Load stored auth data on app start
   useEffect(() => {
@@ -45,16 +47,42 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       
       if (storedToken && storedUser) {
         console.log('✅ Found stored auth data');
-        setToken(storedToken);
-        setUser(JSON.parse(storedUser));
-        apiService.setAuthToken(storedToken);
+        
+        // FIX: Validate token before using it
+        try {
+          const userData = JSON.parse(storedUser);
+          // Quick token validation
+          const tokenParts = storedToken.split('.');
+          if (tokenParts.length !== 3) {
+            throw new Error('Invalid token format');
+          }
+          
+          // Check if token is expired
+          const payload = JSON.parse(atob(tokenParts[1]));
+          const currentTime = Math.floor(Date.now() / 1000);
+          
+          if (payload.exp && payload.exp < currentTime) {
+            console.log('⚠️ Token expired, clearing stored auth');
+            await AsyncStorage.multiRemove(['authToken', 'user']);
+          } else {
+            setToken(storedToken);
+            setUser(userData);
+            apiService.setAuthToken(storedToken);
+            console.log('✅ Auth restored from storage');
+          }
+        } catch (parseError) {
+          console.error('❌ Error parsing stored auth:', parseError);
+          await AsyncStorage.multiRemove(['authToken', 'user']);
+        }
       } else {
         console.log('ℹ️ No stored auth data found');
       }
     } catch (error) {
       console.error('❌ Error loading stored auth:', error);
+      // Clear potentially corrupted data
+      await AsyncStorage.multiRemove(['authToken', 'user']);
     } finally {
-      setIsInitialized(true);
+      setIsInitialized(true); // FIX: Set initialized before loading
       setIsLoading(false);
       console.log('✅ Auth initialization complete');
     }
@@ -138,6 +166,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       token,
       isAuthenticated,
       isLoading,
+      isInitialized, // ADD THIS
       sendVerificationCode,
       login,
       logout,
