@@ -16,7 +16,7 @@
     "db:migrate": "cd phone-app-backend && npm run migrate",
     
     "backend:dev": "cd phone-app-backend && npm run dev",
-    "frontend:start": "cd phone-app-frontend && npm start",
+    "frontend:start": "cd phone-app-frontend && npx expo start --clear",
     
     "test": "npm run health && npm run test:connection",
     "health": "node scripts/health-check.js",
