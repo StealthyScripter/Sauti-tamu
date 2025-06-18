@@ -8,16 +8,22 @@
     "phone-app-frontend"
   ],
   "scripts": {
-    "dev": "npm run db:start && concurrently \"npm run backend:dev\" \"npm run frontend:start\"",
+    "dev": "npm run db:start && concurrently \"npm run backend:dev\" \"npm run frontend:start-web\"",
     "start": "npm run dev",
+
     "db:start": "cd phone-app-backend && docker-compose up -d",
     "db:stop": "cd phone-app-backend && docker-compose down",
     "db:migrate": "cd phone-app-backend && npm run migrate",
+
     "backend:dev": "cd phone-app-backend && npm run dev",
-    "frontend:start": "cd phone-app-frontend && npx expo start --clear",
+
+    "frontend:start": "npm run start --workspace phone-app-frontend",
+    "frontend:start-web": "npm run web --workspace phone-app-frontend",
+
     "test": "npm run health && npm run test:connection",
     "health": "node scripts/health-check.js",
     "test:connection": "cd phone-app-backend && node scripts/test-connection.js",
+
     "reset": "node scripts/full-reset.js",
     "stop": "node scripts/stop-all-services.js",
     "clean": "rm -rf node_modules phone-app-backend/node_modules phone-app-frontend/node_modules",
