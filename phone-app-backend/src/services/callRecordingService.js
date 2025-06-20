@@ -1,8 +1,6 @@
 import AWS from 'aws-sdk';
-import pkg from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 import redis from '../config/redis.js';
-
-const { v4: uuidv4 } = pkg;
 
 class CallRecordingService {
   constructor() {

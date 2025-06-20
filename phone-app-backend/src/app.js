@@ -6,14 +6,14 @@ import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import connectMongoDB from './config/mongodb.js';
+
 import productionPhoneService from './services/productionPhoneService.js';
+import websocketService from './services/websocketService.js';
+import callTimeoutService from './services/callTimeoutService.js';
 import pushNotificationService from './services/pushNotificationService.js';
 import callRecordingService from './services/callRecordingService.js';
 
-
-// Import services
-import websocketService from './services/websocketService.js';
-import callTimeoutService from './services/callTimeoutService.js';
+// Import routes
 import authRoutes from './routes/auth.js';
 import contactRoutes from './routes/contacts.js';
 import callRoutes from './routes/calls.js';
@@ -41,7 +41,6 @@ async function initializeDatabases() {
     console.log('✅ All databases connected successfully');
   } catch (error) {
     console.error('❌ Critical: Database connection failed:', error);
-    // FIX: Fail fast for critical database issues
     if (process.env.NODE_ENV === 'production') {
       console.error('💥 Exiting due to database connection failure in production');
       process.exit(1);
@@ -51,22 +50,54 @@ async function initializeDatabases() {
   }
 }
 
+// Initialize services
+async function initializeServices() {
+  try {
+    console.log('🔄 Initializing services...');
+    
+    // Test phone service (includes Firebase)
+    const phoneServiceHealth = await productionPhoneService.healthCheck();
+    if (phoneServiceHealth.healthy) {
+      console.log('✅ Phone service ready (Firebase SMS:', phoneServiceHealth.services.firebaseSms ? 'Enabled' : 'Disabled', ')');
+      console.log('✅ Firebase Admin service ready');
+    } else {
+      console.warn('⚠️ Phone service issues:', phoneServiceHealth.warnings.join(', '));
+    }
+    
+    // Initialize WebSocket service
+    websocketService.initialize(server);
+    console.log('🔌 WebSocket service initialized');
+    
+    // Start call timeout service
+    callTimeoutService.start();
+    console.log('⏰ Call timeout service started');
+    
+    console.log('✅ All services initialized');
+  } catch (error) {
+    console.error('❌ Service initialization failed:', error);
+    if (process.env.NODE_ENV === 'production') {
+      process.exit(1);
+    }
+  }
+}
+
 // Security middleware
 app.use(helmet());
 app.use(cors({
-  origin:[ 
-    'http://localhost:3000',    // Original backend URL
-    'http://localhost:8081',    // Expo web development server
-    'http://localhost:19006',   // Alternative Expo port
+  origin: [ 
+    'http://localhost:3000',
+    'http://localhost:8081',
+    'http://localhost:19006',
     'http://localhost:19000',
-    process.env.FRONTEND_URL].filter(Boolean),
+    process.env.FRONTEND_URL
+  ].filter(Boolean),
   credentials: true
 }));
 
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // limit each IP to 100 requests per windowMs
+  max: 1000,
   message: 'Too many requests from this IP, please try again later.',
 });
 app.use(limiter);
@@ -81,9 +112,11 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Routes
 app.get('/', (req, res) => {
   res.json({ 
-    message: 'Phone App Backend API',
+    message: 'Phone App Backend API with Firebase Auth',
     version: '1.0.0',
-    status: 'running'
+    status: 'running',
+    auth: 'firebase',
+    firebaseSms: productionPhoneService.smsEnabled
   });
 });
 
@@ -92,7 +125,9 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'OK',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    auth: 'firebase',
+    firebaseSms: productionPhoneService.smsEnabled
   });
 });
 
@@ -102,32 +137,31 @@ app.use('/api/calls', callRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/recordings', recordingRoutes);
 
-// Health check endpoints
+// FIXED: Enhanced health check using productionPhoneService
 app.get('/health/services', async (req, res) => {
   try {
-    const healthStatus = await productionPhoneService.healthCheck();
-    const stats = await productionPhoneService.getStats();
+    // Get phone service health (includes Firebase)
+    const phoneServiceHealth = await productionPhoneService.healthCheck();
     
-    // Add new service stats
+    // Get other service stats
     const wsStats = {
       connectedUsers: websocketService.getOnlineUsersCount(),
       isActive: true
     };
     
     const timeoutStats = callTimeoutService.getStats();
-    const pushStats = pushNotificationService.getStats(); // NEW
-    const recordingStats = callRecordingService.getStats(); // NEW
+    const pushStats = pushNotificationService.getStats();
+    const recordingStats = callRecordingService.getStats();
     
     res.json({
-      status: healthStatus.healthy ? 'healthy' : 'unhealthy',
+      status: phoneServiceHealth.healthy ? 'healthy' : 'degraded',
       services: {
-        ...healthStatus.services,
+        phoneService: phoneServiceHealth,
         websocket: wsStats,
         callTimeout: timeoutStats,
-        pushNotifications: pushStats, // NEW
-        callRecording: recordingStats // NEW
+        pushNotifications: pushStats,
+        callRecording: recordingStats
       },
-      statistics: stats,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -146,7 +180,6 @@ app.use((err, req, res, next) => {
     error: 'Something went wrong!',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
   });
-  console.log(next);
 });
 
 // 404 handler
@@ -157,27 +190,24 @@ app.use('*', (req, res) => {
   });
 });
 
-// Start server and initialize services
+// Start server
 async function startServer() {
   try {
     // Initialize databases first
     await initializeDatabases();
     
-    // Initialize WebSocket service
-    websocketService.initialize(server);
-    console.log('🔌 WebSocket service initialized');
+    // Initialize services
+    await initializeServices();
     
-    // Start call timeout service
-    callTimeoutService.start();
-    console.log('⏰ Call timeout service started');
-    
-    // Start the HTTP server (now includes WebSocket)
+    // Start the HTTP server
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
-      console.log('📱 Phone App Backend API');
+      console.log('📱 Phone App Backend API with Firebase Auth');
       console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`📊 Health check: http://localhost:${PORT}/health`);
       console.log(`🔌 WebSocket ready on ws://localhost:${PORT}`);
+      console.log(`🔥 Firebase SMS: ${productionPhoneService.smsEnabled ? 'Enabled' : 'Disabled'}`);
+      console.log(`📧 Firebase Admin: ${productionPhoneService.firebaseEnabled ? 'Enabled' : 'Disabled'}`);
     });
     
     // Handle graceful shutdown

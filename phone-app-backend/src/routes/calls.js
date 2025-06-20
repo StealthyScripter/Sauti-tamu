@@ -1,336 +1,256 @@
 import express from 'express';
-import { body, param, query, validationResult } from 'express-validator';
+import { body, query, validationResult } from 'express-validator';
 import rateLimit from 'express-rate-limit';
-import { authenticateToken } from '../middleware/auth.js';
-import callService from '../services/callService.js';
-import callingService from '../services/callingService.js';
-import productionPhoneService from '../services/productionPhoneService.js';
+import pkg from 'agora-access-token';
+const { RtcTokenBuilder, RtcRole } = pkg;
+import authMiddleware from '../middleware/authMiddleware.js';
+import Call from '../models/Call.js';
+import websocketService from '../services/websocketService.js';
+import callTimeoutService from '../services/callTimeoutService.js';
 
 const router = express.Router();
 
-// Rate limiting for call endpoints
+// Apply auth middleware to all call routes
+router.use(authMiddleware);
+
+// Rate limiting for calls
 const callLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 10, // 10 calls per minute per IP
-  message: 'Too many call attempts, please try again later.',
+  max: 30, // 30 calls per minute per user
+  message: 'Too many call attempts, please try again in a minute'
 });
 
-// All call routes require authentication
-router.use(authenticateToken);
+// Get user's call history
+router.get('/', 
+  [
+    query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+    query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+    query('status').optional().isIn(['pending', 'connected', 'ended', 'missed', 'rejected'])
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+      }
 
-// ==========================================
-// CALL INITIATION & MANAGEMENT (from calling.js)
-// ==========================================
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 20;
+      const status = req.query.status;
+      
+      const query = {
+        $or: [
+          { caller_id: req.user.id },
+          { callee_id: req.user.id }
+        ]
+      };
+      
+      if (status) {
+        query.status = status;
+      }
 
-// POST /api/calls/initiate - Initiate a new call
+      const calls = await Call.find(query)
+        .sort({ created_at: -1 })
+        .limit(limit * 1)
+        .skip((page - 1) * limit)
+        .populate('caller_id', 'display_name phone_number')
+        .populate('callee_id', 'display_name phone_number');
+
+      const total = await Call.countDocuments(query);
+
+      res.json({
+        success: true,
+        data: calls,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      });
+    } catch (error) {
+      console.error('Get calls error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch calls',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+);
+
+// Generate Agora token for voice/video calls
+router.post('/agora-token',
+  callLimiter,
+  [
+    body('channelName')
+      .isLength({ min: 1, max: 64 })
+      .matches(/^[a-zA-Z0-9_-]+$/)
+      .withMessage('Channel name must be 1-64 characters, alphanumeric with _ or -'),
+    body('role')
+      .isIn(['publisher', 'subscriber'])
+      .withMessage('Role must be publisher or subscriber'),
+    body('uid').optional().isInt({ min: 0 }).withMessage('UID must be a non-negative integer')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+      }
+
+      const { channelName, role, uid } = req.body;
+      
+      // Get Agora credentials from environment
+      const appId = process.env.AGORA_APP_ID;
+      const appCertificate = process.env.AGORA_APP_CERTIFICATE;
+      
+      if (!appId || !appCertificate) {
+        return res.status(500).json({
+          success: false,
+          message: 'Agora credentials not configured'
+        });
+      }
+
+      // Set role for Agora
+      const userRole = role === 'publisher' ? RtcRole.PUBLISHER : RtcRole.SUBSCRIBER;
+      
+      // Use provided UID or generate from user ID
+      const agoraUid = uid || parseInt(req.user.id.replace(/\D/g, '').slice(-9)) || 0;
+      
+      // Token expires in 24 hours
+      const expirationTimeInSeconds = Math.floor(Date.now() / 1000) + 86400;
+      
+      // Generate the token
+      const token = RtcTokenBuilder.buildTokenWithUid(
+        appId,
+        appCertificate,
+        channelName,
+        agoraUid,
+        userRole,
+        expirationTimeInSeconds
+      );
+
+      console.log(`🎯 Agora token generated for user ${req.user.id}, channel: ${channelName}`);
+
+      res.json({
+        success: true,
+        data: {
+          token,
+          appId,
+          channelName,
+          uid: agoraUid,
+          role,
+          expiresAt: new Date(expirationTimeInSeconds * 1000).toISOString()
+        }
+      });
+    } catch (error) {
+      console.error('Agora token generation error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to generate Agora token',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+);
+
+// Initiate a call
 router.post('/initiate',
   callLimiter,
   [
-    body('toPhoneNumber')
-      .custom((value) => {
-        const cleaned = value.replace(/[^\d+]/g, '');
-        if (!/^\+?[1-9]\d{6,14}$/.test(cleaned)) {
-          throw new Error('Valid phone number required (6-15 digits, optionally starting with +)');
-        }
-        return true;
-      })
-      .withMessage('Valid phone number required'),
-    body('callType')
-      .optional()
-      .isIn(['voice', 'video'])
-      .withMessage('Call type must be voice or video'),
-    body('metadata')
-      .optional()
-      .isObject()
-      .withMessage('Metadata must be an object')
+    body('calleeId')
+      .isUUID()
+      .withMessage('Valid callee ID required'),
+    body('type')
+      .isIn(['audio', 'video'])
+      .withMessage('Call type must be audio or video'),
+    body('channelName')
+      .isLength({ min: 1, max: 64 })
+      .matches(/^[a-zA-Z0-9_-]+$/)
+      .withMessage('Valid channel name required')
   ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+      }
+
+      const { calleeId, type, channelName } = req.body;
+      
+      // Check if user is trying to call themselves
+      if (calleeId === req.user.id) {
         return res.status(400).json({
           success: false,
-          message: 'Validation failed',
-          errors: errors.array()
+          message: 'Cannot call yourself'
         });
       }
 
-      const { toPhoneNumber, callType = 'voice', metadata = {} } = req.body;
-      const fromUserId = req.user.userId;
-
-      // Add device/request metadata
-      const enrichedMetadata = {
-        ...metadata,
-        deviceInfo: {
-          caller: {
-            userAgent: req.headers['user-agent'],
-            ip: req.ip,
-            ...metadata.deviceInfo?.caller
-          }
-        },
-        requestTimestamp: new Date().toISOString()
-      };
-
-      const result = await callingService.initiateCall(
-        fromUserId,
-        toPhoneNumber,
-        callType,
-        enrichedMetadata
-      );
-
-      // Log call initiation to analytics
-      try {
-        await callService.logCall({
-          callId: result.callId,
-          fromUserId,
-          toUserId: null,
-          toPhoneNumber: result.toPhoneNumber,
-          callType: result.callType,
-          status: result.status,
-          startTime: new Date().toISOString(),
-          connectionType: metadata.connectionType || 'unknown'
-        });
-      } catch (logError) {
-        console.error('Failed to log call initiation:', logError);
-      }
-
-      res.status(201).json({
-        success: true,
-        message: 'Call initiated successfully',
-        data: result
+      // Create call record
+      const call = new Call({
+        caller_id: req.user.id,
+        callee_id: calleeId,
+        channel_name: channelName,
+        call_type: type,
+        status: 'pending'
       });
 
+      await call.save();
+
+      // Set call timeout (30 seconds for pickup)
+      callTimeoutService.setCallTimeout(call._id.toString(), 30000);
+
+      // Notify callee via WebSocket
+      websocketService.emitToUser(calleeId, 'incoming_call', {
+        callId: call._id,
+        callerId: req.user.id,
+        callerName: req.user.display_name,
+        callerPhone: req.user.phone_number,
+        type,
+        channelName
+      });
+
+      console.log(`📞 Call initiated: ${req.user.display_name} calling ${calleeId} (${type})`);
+
+      res.json({
+        success: true,
+        data: {
+          callId: call._id,
+          channelName,
+          type,
+          status: 'pending'
+        }
+      });
     } catch (error) {
       console.error('Call initiation error:', error);
-      
-      const statusCode = error.message.includes('already has an active call') || 
-                        error.message.includes('currently on another call') ? 409 : 500;
-      
-      res.status(statusCode).json({
+      res.status(500).json({
         success: false,
-        message: error.message || 'Failed to initiate call',
-        error: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        message: 'Failed to initiate call',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }
   }
 );
 
-// POST /api/calls/:callId/accept - Accept an incoming call
-router.post('/:callId/accept',
+// Accept/reject a call
+router.patch('/:callId/respond',
   [
-    param('callId').isUUID().withMessage('Valid call ID required'),
-    body('metadata').optional().isObject().withMessage('Metadata must be an object')
+    body('action')
+      .isIn(['accept', 'reject'])
+      .withMessage('Action must be accept or reject')
   ],
   async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation failed',
-          errors: errors.array()
-        });
+        return res.status(400).json({ success: false, errors: errors.array() });
       }
 
       const { callId } = req.params;
-      const { metadata = {} } = req.body;
-      const userId = req.user.userId;
+      const { action } = req.body;
 
-      const enrichedMetadata = {
-        ...metadata,
-        deviceInfo: {
-          callee: {
-            userAgent: req.headers['user-agent'],
-            ip: req.ip,
-            ...metadata.deviceInfo?.callee
-          }
-        },
-        acceptedAt: new Date().toISOString()
-      };
-
-      const result = await callingService.acceptCall(callId, userId, enrichedMetadata);
-
-      try {
-        await callService.updateCallStatus(callId, 'active');
-      } catch (logError) {
-        console.error('Failed to update call log:', logError);
-      }
-
-      res.json({
-        success: true,
-        message: 'Call accepted successfully',
-        data: result
-      });
-
-    } catch (error) {
-      console.error('Call accept error:', error);
-      
-      const statusCode = error.message.includes('not found') ? 404 :
-        error.message.includes('Unauthorized') ? 403 :
-          error.message.includes('Cannot accept') ? 409 : 500;
-      
-      res.status(statusCode).json({
-        success: false,
-        message: error.message || 'Failed to accept call',
-        error: process.env.NODE_ENV === 'development' ? error.stack : undefined
-      });
-    }
-  }
-);
-
-// POST /api/calls/:callId/reject - Reject an incoming call
-router.post('/:callId/reject',
-  [
-    param('callId').isUUID().withMessage('Valid call ID required'),
-    body('reason').optional().isIn(['busy', 'declined', 'unavailable', 'blocked']),
-    body('metadata').optional().isObject()
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation failed',
-          errors: errors.array()
-        });
-      }
-
-      const { callId } = req.params;
-      const { reason = 'declined', metadata = {} } = req.body;
-      const userId = req.user.userId;
-
-      const result = await callingService.rejectCall(callId, userId, reason);
-
-      try {
-        await callService.updateCallStatus(callId, 'rejected');
-      } catch (logError) {
-        console.error('Failed to update call log:', logError);
-      }
-      console.log('Metadata: calls.js line 210',metadata);
-
-      res.json({
-        success: true,
-        message: 'Call rejected successfully',
-        data: { ...result, reason }
-      });
-
-    } catch (error) {
-      console.error('Call reject error:', error);
-      
-      const statusCode = error.message.includes('not found') ? 404 :
-        error.message.includes('Unauthorized') ? 403 :
-          error.message.includes('Cannot reject') ? 409 : 500;
-      
-      res.status(statusCode).json({
-        success: false,
-        message: error.message || 'Failed to reject call',
-        error: process.env.NODE_ENV === 'development' ? error.stack : undefined
-      });
-    }
-  }
-);
-
-// POST /api/calls/:callId/end - End an active call
-router.post('/:callId/end',
-  [
-    param('callId').isUUID().withMessage('Valid call ID required'),
-    body('qualityScore').optional().isInt({ min: 1, max: 5 }),
-    body('metadata').optional().isObject()
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation failed',
-          errors: errors.array()
-        });
-      }
-
-      const { callId } = req.params;
-      const { qualityScore, metadata = {} } = req.body;
-      const userId = req.user.userId;
-
-      const result = await callingService.endCall(callId, userId, qualityScore);
-
-      try {
-        await callService.updateCallStatus(
-          callId, 
-          'ended', 
-          new Date().toISOString(), 
-          result.duration
-        );
-      } catch (logError) {
-        console.error('Failed to update call log:', logError);
-      }
-      console.log('Metadata: calls.js line 268',metadata);
-
-      res.json({
-        success: true,
-        message: 'Call ended successfully',
-        data: result
-      });
-
-    } catch (error) {
-      console.error('Call end error:', error);
-      
-      const statusCode = error.message.includes('not found') ? 404 :
-        error.message.includes('Unauthorized') ? 403 : 500;
-      
-      res.status(statusCode).json({
-        success: false,
-        message: error.message || 'Failed to end call',
-        error: process.env.NODE_ENV === 'development' ? error.stack : undefined
-      });
-    }
-  }
-);
-
-// GET /api/calls/active - Get user's active calls
-router.get('/active', async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const activeCalls = await callingService.getActiveCalls(userId);
-
-    res.json({
-      success: true,
-      data: {
-        calls: activeCalls,
-        count: activeCalls.length
-      }
-    });
-
-  } catch (error) {
-    console.error('Error fetching active calls:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch active calls',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
-// GET /api/calls/:callId - Get call details
-router.get('/:callId',
-  [param('callId').isUUID().withMessage('Valid call ID required')],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation failed',
-          errors: errors.array()
-        });
-      }
-
-      const { callId } = req.params;
-      const userId = req.user.userId;
-      
-      const call = await callingService.getCall(callId);
-      
+      const call = await Call.findById(callId);
       if (!call) {
         return res.status(404).json({
           success: false,
@@ -338,162 +258,157 @@ router.get('/:callId',
         });
       }
 
-      if (call.fromUserId !== userId && call.toUserId !== userId) {
+      // Only callee can respond to calls
+      if (call.callee_id.toString() !== req.user.id) {
         return res.status(403).json({
           success: false,
-          message: 'Unauthorized to view this call'
+          message: 'Unauthorized to respond to this call'
         });
       }
 
-      res.json({
-        success: true,
-        data: call
-      });
-
-    } catch (error) {
-      console.error('Error fetching call details:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch call details',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
-    }
-  }
-);
-
-// ==========================================
-// CALL HISTORY & ANALYTICS (from callsManagement.js)
-// ==========================================
-
-// GET /api/calls/history - Get call history
-router.get('/history',
-  [
-    query('page').optional().isInt({ min: 1 }),
-    query('limit').optional().isInt({ min: 1, max: 100 }),
-    query('callType').optional().isIn(['voice', 'video']),
-    query('status').optional().isIn(['initiated', 'ringing', 'active', 'ended', 'failed', 'missed'])
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ 
-          success: false,
-          errors: errors.array() 
-        });
+      // Update call status
+      call.status = action === 'accept' ? 'connected' : 'rejected';
+      if (action === 'accept') {
+        call.connected_at = new Date();
+      } else {
+        call.ended_at = new Date();
       }
+      
+      await call.save();
 
-      const userId = req.user.userId;
-      const { page = 1, limit = 50, callType, status, dateFrom, dateTo } = req.query;
+      // Clear timeout
+      callTimeoutService.clearCallTimeout(callId);
 
-      const filters = {};
-      if (callType) filters.callType = callType;
-      if (status) filters.status = status;
-      if (dateFrom) filters.dateFrom = dateFrom;
-      if (dateTo) filters.dateTo = dateTo;
+      // Notify caller
+      websocketService.emitToUser(call.caller_id.toString(), 'call_response', {
+        callId,
+        action,
+        message: action === 'accept' ? 'Call accepted' : 'Call rejected'
+      });
 
-      const callHistory = await callService.getCallHistory(
-        userId,
-        parseInt(page),
-        parseInt(limit),
-        filters
-      );
+      console.log(`📞 Call ${action}ed: ${callId}`);
 
       res.json({
         success: true,
-        data: callHistory,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit)
+        data: {
+          callId,
+          status: call.status,
+          action
         }
       });
     } catch (error) {
-      console.error('Error fetching call history:', error);
+      console.error('Call response error:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to fetch call history',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        message: 'Failed to respond to call',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }
   }
 );
 
-// GET /api/calls/analytics - Get call analytics
-router.get('/analytics',
-  [query('period').optional().isIn(['1d', '7d', '30d', '90d'])],
-  async (req, res) => {
-    try {
-      const userId = req.user.userId;
-      const { period = '7d' } = req.query;
+// End a call
+router.patch('/:callId/end', async (req, res) => {
+  try {
+    const { callId } = req.params;
 
-      const analytics = await callService.getCallAnalytics(userId, period);
-
-      res.json({
-        success: true,
-        data: analytics
-      });
-    } catch (error) {
-      res.status(500).json({
+    const call = await Call.findById(callId);
+    if (!call) {
+      return res.status(404).json({
         success: false,
-        message: 'Failed to fetch call analytics',
-        error: error.message
+        message: 'Call not found'
       });
     }
-  }
-);
 
-// ==========================================
-// AGORA TOKEN GENERATION
-// ==========================================
+    // Only participants can end the call
+    if (call.caller_id.toString() !== req.user.id && call.callee_id.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized to end this call'
+      });
+    }
 
-// POST /api/calls/token - Get call tokens
-router.post('/token',
-  [
-    body('callId').isUUID().withMessage('Valid call ID required'),
-    body('role').optional().isIn(['publisher', 'audience']).withMessage('Role must be publisher or audience')
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Validation failed',
-          errors: errors.array()
-        });
+    // Update call status
+    call.status = 'ended';
+    call.ended_at = new Date();
+    
+    // Calculate duration if call was connected
+    if (call.connected_at) {
+      call.duration = Math.floor((call.ended_at - call.connected_at) / 1000); // seconds
+    }
+    
+    await call.save();
+
+    // Clear any timeouts
+    callTimeoutService.clearCallTimeout(callId);
+
+    // Notify other participant
+    const otherUserId = call.caller_id.toString() === req.user.id 
+      ? call.callee_id.toString() 
+      : call.caller_id.toString();
+      
+    websocketService.emitToUser(otherUserId, 'call_ended', {
+      callId,
+      endedBy: req.user.id,
+      duration: call.duration
+    });
+
+    console.log(`📞 Call ended: ${callId}, duration: ${call.duration || 0}s`);
+
+    res.json({
+      success: true,
+      data: {
+        callId,
+        status: 'ended',
+        duration: call.duration
       }
+    });
+  } catch (error) {
+    console.error('End call error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to end call',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
 
-      const { callId, role = 'publisher' } = req.body;
-      const userId = req.user.userId;
+// Get call details
+router.get('/:callId', async (req, res) => {
+  try {
+    const { callId } = req.params;
 
-      // Verify user is part of this call
-      const call = await callingService.getCall(callId);
-      if (!call || (call.fromUserId !== userId && call.toUserId !== userId)) {
-        return res.status(403).json({
-          success: false,
-          message: 'Unauthorized to access this call'
-        });
-      }
+    const call = await Call.findById(callId)
+      .populate('caller_id', 'display_name phone_number')
+      .populate('callee_id', 'display_name phone_number');
 
-      // Generate Agora token
-      const channelName = `call_${callId}`;
-      const tokenData = productionPhoneService.generateAgoraToken(channelName, userId, role);
-
-      res.json({
-        success: true,
-        message: 'Call token generated successfully',
-        data: tokenData
-      });
-
-    } catch (error) {
-      console.error('Token generation error:', error);
-      res.status(500).json({
+    if (!call) {
+      return res.status(404).json({
         success: false,
-        message: 'Failed to generate call token',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        message: 'Call not found'
       });
     }
+
+    // Only participants can view call details
+    if (call.caller_id._id.toString() !== req.user.id && call.callee_id._id.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized to view this call'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: call
+    });
+  } catch (error) {
+    console.error('Get call error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch call details',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
   }
-);
+});
 
 export default router;

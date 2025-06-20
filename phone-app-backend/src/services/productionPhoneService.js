@@ -1,18 +1,17 @@
 import admin from 'firebase-admin';
 import crypto from 'crypto';
 import redis from '../config/redis.js';
+import fetch from 'node-fetch';
 
 // Handle Agora imports with fallback for different module systems
 let RtcTokenBuilder, RtcRole;
 
 try {
-  // Try ES module import first
   const agoraModule = await import('agora-access-token');
   if (agoraModule.RtcTokenBuilder && agoraModule.RtcRole) {
     RtcTokenBuilder = agoraModule.RtcTokenBuilder;
     RtcRole = agoraModule.RtcRole;
   } else if (agoraModule.default) {
-    // Handle CommonJS default export
     RtcTokenBuilder = agoraModule.default.RtcTokenBuilder;
     RtcRole = agoraModule.default.RtcRole;
   } else {
@@ -20,9 +19,6 @@ try {
   }
 } catch (error) {
   console.warn('⚠️  Agora access token module not available:', error.message);
-  console.log('📦 Please install: npm install agora-access-token');
-  
-  // Create mock implementations for development
   RtcTokenBuilder = {
     buildTokenWithUid: () => 'mock-agora-token-for-development'
   };
@@ -37,6 +33,10 @@ class ProductionPhoneService {
     this.codeLength = 6;
     this.expirationTime = 10 * 60; // 10 minutes in seconds
     this.maxAttempts = 3;
+    
+    // Firebase Auth configuration
+    this.webApiKey = process.env.FIREBASE_WEB_API_KEY;
+    this.projectId = process.env.FIREBASE_PROJECT_ID;
     
     // Initialize Firebase Admin
     this.initializeFirebase();
@@ -67,6 +67,7 @@ class ProductionPhoneService {
         if (!firebaseConfig.projectId || !firebaseConfig.clientEmail || !firebaseConfig.privateKey) {
           console.warn('⚠️  Firebase credentials not configured - using fallback SMS service');
           this.firebaseEnabled = false;
+          this.smsEnabled = false;
           return;
         }
 
@@ -77,9 +78,20 @@ class ProductionPhoneService {
         this.firebaseEnabled = true;
         console.log('✅ Firebase Admin initialized');
       }
+
+      // Check if we have web API key for SMS
+      if (!this.webApiKey || !this.projectId) {
+        console.warn('⚠️  Firebase Web API key not configured - SMS disabled');
+        this.smsEnabled = false;
+      } else {
+        this.smsEnabled = true;
+        console.log('✅ Firebase SMS service enabled');
+      }
+      
     } catch (error) {
       console.error('❌ Firebase initialization failed:', error.message);
       this.firebaseEnabled = false;
+      this.smsEnabled = false;
     }
   }
 
@@ -102,39 +114,118 @@ class ProductionPhoneService {
     return true;
   }
 
-  // Send SMS using Firebase Auth (Primary method)
+  // Send SMS using Firebase Auth (NEW - Primary method)
   async sendVerificationCodeFirebase(phoneNumber) {
     try {
-      if (!this.firebaseEnabled) {
-        throw new Error('Firebase not configured');
+      if (!this.smsEnabled) {
+        throw new Error('Firebase SMS not configured');
       }
 
-      // Generate custom verification code for consistent experience
-      const code = this.generateVerificationCode();
+      const url = `https://identitytoolkit.googleapis.com/v1/accounts:sendVerificationCode?key=${this.webApiKey}`;
       
-      // Store in Redis for verification (since Firebase handles sending)
-      await this.storeVerificationCode(phoneNumber, code);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          phoneNumber: phoneNumber,
+          recaptchaToken: 'test' // For testing, in production you'd need real reCAPTCHA
+        })
+      });
 
-      // Note: In a real Firebase setup, you'd use the Firebase Auth REST API
-      // or client SDK to send the SMS. This is a simplified version.
-      
-      // For now, we'll use Firebase's custom claims to verify
-      console.log(`📱 Firebase SMS to ${phoneNumber}: ${code}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('Firebase SMS error:', data);
+        throw new Error(data.error?.message || 'Failed to send SMS');
+      }
+
+      console.log(`📱 Firebase SMS sent to ${phoneNumber}`);
       
       return {
         success: true,
+        sessionInfo: data.sessionInfo,
         message: 'Verification code sent via Firebase',
         provider: 'firebase',
         data: {
           phoneNumber,
           expiresIn: this.expirationTime,
-          // Include code in development mode
-          ...(process.env.NODE_ENV === 'development' && { _testCode: code })
+          sessionInfo: data.sessionInfo
         }
       };
+
     } catch (error) {
       console.error('Firebase SMS error:', error);
-      throw new Error('Failed to send SMS via Firebase');
+      throw new Error(`Firebase SMS failed: ${error.message}`);
+    }
+  }
+
+  // Verify SMS code with Firebase (NEW)
+  async verifyCodeFirebase(sessionInfo, verificationCode) {
+    try {
+      if (!this.smsEnabled) {
+        throw new Error('Firebase SMS not configured');
+      }
+
+      const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPhoneNumber?key=${this.webApiKey}`;
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          sessionInfo: sessionInfo,
+          code: verificationCode
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('Firebase verification error:', data);
+        
+        if (data.error?.message?.includes('INVALID_CODE')) {
+          return {
+            success: false,
+            message: 'Invalid verification code'
+          };
+        } else if (data.error?.message?.includes('SESSION_EXPIRED')) {
+          return {
+            success: false,
+            message: 'Verification code expired'
+          };
+        }
+        
+        throw new Error(data.error?.message || 'Verification failed');
+      }
+
+      // Verify the Firebase ID token
+      const decodedToken = await admin.auth().verifyIdToken(data.idToken);
+      
+      console.log(`✅ Firebase verification successful for ${decodedToken.phone_number}`);
+      
+      return {
+        success: true,
+        phoneNumber: decodedToken.phone_number,
+        firebaseUid: decodedToken.uid,
+        idToken: data.idToken,
+        refreshToken: data.refreshToken,
+        message: 'Phone number verified successfully'
+      };
+
+    } catch (error) {
+      console.error('❌ Firebase verification error:', error);
+      
+      if (error.code === 'auth/id-token-expired') {
+        return {
+          success: false,
+          message: 'Verification session expired'
+        };
+      }
+      
+      throw new Error(`Verification failed: ${error.message}`);
     }
   }
 
@@ -171,17 +262,18 @@ class ProductionPhoneService {
       const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
       
       // Try Firebase first
-      if (this.firebaseEnabled) {
+      if (this.smsEnabled) {
         return await this.sendVerificationCodeFirebase(normalizedPhone);
       } else {
         // Use fallback method
+        console.warn('⚠️  Firebase SMS not available, using fallback');
         return await this.sendVerificationCodeFallback(normalizedPhone);
       }
     } catch (error) {
       console.error('SMS sending failed:', error);
       
       // Try fallback if Firebase fails
-      if (this.firebaseEnabled) {
+      if (this.smsEnabled) {
         console.log('Trying fallback SMS method...');
         return await this.sendVerificationCodeFallback(phoneNumber);
       }
@@ -190,11 +282,29 @@ class ProductionPhoneService {
     }
   }
 
-  // Verify SMS code
-  async verifyCode(phoneNumber, providedCode) {
+  // Main verification method
+  async verifyCode(phoneNumber, providedCode, sessionInfo = null) {
     try {
       const normalizedPhone = this.normalizePhoneNumber(phoneNumber);
-      const key = `verification:${normalizedPhone}`;
+      
+      // If we have sessionInfo, use Firebase verification
+      if (sessionInfo && this.smsEnabled) {
+        return await this.verifyCodeFirebase(sessionInfo, providedCode);
+      }
+      
+      // Otherwise, use fallback Redis verification
+      return await this.verifyCodeFallback(normalizedPhone, providedCode);
+      
+    } catch (error) {
+      console.error('Error verifying code:', error);
+      throw new Error('Failed to verify code');
+    }
+  }
+
+  // Fallback verification (existing method)
+  async verifyCodeFallback(phoneNumber, providedCode) {
+    try {
+      const key = `verification:${phoneNumber}`;
       const storedData = await redis.get(key);
       
       if (!storedData) {
@@ -223,13 +333,13 @@ class ProductionPhoneService {
       if (data.code === providedCode) {
         // Clean up verification code
         await redis.del(key);
-        console.log(`✅ Verification successful for ${normalizedPhone}`);
+        console.log(`✅ Verification successful for ${phoneNumber}`);
         return {
           success: true,
           message: 'Phone number verified successfully'
         };
       } else {
-        console.log(`❌ Invalid code for ${normalizedPhone}: provided ${providedCode}, expected ${data.code}`);
+        console.log(`❌ Invalid code for ${phoneNumber}: provided ${providedCode}, expected ${data.code}`);
         return {
           success: false,
           message: `Invalid verification code. ${this.maxAttempts - data.attempts} attempts remaining`
@@ -241,34 +351,80 @@ class ProductionPhoneService {
     }
   }
 
-  // Verify Firebase ID token (alternative verification method)
-  async verifyFirebaseToken(idToken) {
-    try {
-      if (!this.firebaseEnabled) {
-        throw new Error('Firebase not configured');
-      }
+  // ... [Keep all your existing Agora methods: generateAgoraToken, createCallRoom, etc.] ...
 
-      const decodedToken = await admin.auth().verifyIdToken(idToken);
+  // Utility method to normalize phone numbers
+  normalizePhoneNumber(phoneNumber) {
+    // Remove all non-digit characters except +
+    let cleaned = phoneNumber.replace(/[^\d+]/g, '');
+    
+    // If it doesn't start with +, assume it's a US number and add +1
+    if (!cleaned.startsWith('+')) {
+      if (cleaned.length === 10) {
+        cleaned = '+1' + cleaned;
+      } else if (cleaned.length === 11 && cleaned.startsWith('1')) {
+        cleaned = '+' + cleaned;
+      }
+    }
+    
+    return cleaned;
+  }
+
+  // Enhanced health check
+  async healthCheck() {
+    const status = {
+      firebase: this.firebaseEnabled,
+      firebaseSms: this.smsEnabled,
+      agora: this.agoraEnabled,
+      redis: false
+    };
+
+    try {
+      await redis.ping();
+      status.redis = true;
+    } catch (error) {
+      console.error('Redis health check failed:', error);
+    }
+
+    return {
+      healthy: status.redis, // At minimum, Redis should work
+      services: status,
+      warnings: [
+        ...(!status.firebase ? ['Firebase not configured'] : []),
+        ...(!status.firebaseSms ? ['Firebase SMS not configured'] : []),
+        ...(!status.agora ? ['Agora not configured - voice/video calling disabled'] : [])
+      ]
+    };
+  }
+
+  // Get service statistics
+  async getStats() {
+    try {
+      // Get verification codes count
+      const verificationKeys = await redis.keys('verification:*');
+      
+      // Get active call rooms count
+      const callRoomKeys = await redis.keys('call_room:*');
+
       return {
-        success: true,
-        phoneNumber: decodedToken.phone_number,
-        userId: decodedToken.uid,
-        provider: 'firebase'
+        activeVerifications: verificationKeys.length,
+        activeCallRooms: callRoomKeys.length,
+        serviceStatus: await this.healthCheck()
       };
     } catch (error) {
-      console.error('Firebase token verification error:', error);
+      console.error('Error getting stats:', error);
       return {
-        success: false,
-        message: 'Invalid Firebase token'
+        error: 'Failed to get service statistics'
       };
     }
   }
 
+  // ... [Keep all your existing Agora methods unchanged] ...
+  
   // Generate Agora token for voice/video calling
   generateAgoraToken(channelName, userId, role = 'publisher') {
     try {
       if (!this.agoraEnabled) {
-        // Return mock token for development
         console.warn('⚠️  Agora not configured, returning mock token');
         return {
           success: true,
@@ -285,7 +441,6 @@ class ProductionPhoneService {
       const currentTimestamp = Math.floor(Date.now() / 1000);
       const privilegeExpiredTs = currentTimestamp + expirationTimeInSeconds;
 
-      // Convert role string to Agora role enum
       const agoraRole = role.toLowerCase() === 'audience' ? RtcRole.SUBSCRIBER : RtcRole.PUBLISHER;
 
       const token = RtcTokenBuilder.buildTokenWithUid(
@@ -324,7 +479,6 @@ class ProductionPhoneService {
       
       let calleeToken = null;
       if (calleeUserId) {
-        // Generate token for callee
         calleeToken = this.generateAgoraToken(channelName, calleeUserId, 'publisher');
       }
 
@@ -385,70 +539,6 @@ class ProductionPhoneService {
       console.log(`🧹 Cleaned up call room: ${callId}`);
     } catch (error) {
       console.error('Error cleaning up call room:', error);
-    }
-  }
-
-  // Utility method to normalize phone numbers
-  normalizePhoneNumber(phoneNumber) {
-    // Remove all non-digit characters except +
-    let cleaned = phoneNumber.replace(/[^\d+]/g, '');
-    
-    // If it doesn't start with +, assume it's a US number and add +1
-    if (!cleaned.startsWith('+')) {
-      if (cleaned.length === 10) {
-        cleaned = '+1' + cleaned;
-      } else if (cleaned.length === 11 && cleaned.startsWith('1')) {
-        cleaned = '+' + cleaned;
-      }
-    }
-    
-    return cleaned;
-  }
-
-  // Health check method
-  async healthCheck() {
-    const status = {
-      firebase: this.firebaseEnabled,
-      agora: this.agoraEnabled,
-      redis: false
-    };
-
-    try {
-      await redis.ping();
-      status.redis = true;
-    } catch (error) {
-      console.error('Redis health check failed:', error);
-    }
-
-    return {
-      healthy: status.redis, // At minimum, Redis should work
-      services: status,
-      warnings: [
-        ...(!status.firebase ? ['Firebase not configured - using fallback SMS'] : []),
-        ...(!status.agora ? ['Agora not configured - voice/video calling disabled'] : [])
-      ]
-    };
-  }
-
-  // Get service statistics
-  async getStats() {
-    try {
-      // Get verification codes count
-      const verificationKeys = await redis.keys('verification:*');
-      
-      // Get active call rooms count
-      const callRoomKeys = await redis.keys('call_room:*');
-
-      return {
-        activeVerifications: verificationKeys.length,
-        activeCallRooms: callRoomKeys.length,
-        serviceStatus: await this.healthCheck()
-      };
-    } catch (error) {
-      console.error('Error getting stats:', error);
-      return {
-        error: 'Failed to get service statistics'
-      };
     }
   }
 }

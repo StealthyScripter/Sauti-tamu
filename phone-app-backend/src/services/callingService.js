@@ -1,4 +1,4 @@
-import pkg from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 import Call from '../models/Call.js';
 import redis from '../config/redis.js';
 import authService from './authService.js';
@@ -8,8 +8,6 @@ import callTimeoutService from './callTimeoutService.js';
 import pushNotificationService from './pushNotificationService.js';
 import callRecordingService from './callRecordingService.js';
 
-
-const { v4: uuidv4 } = pkg;
 
 class CallingService {
   constructor() {

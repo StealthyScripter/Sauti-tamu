@@ -3,21 +3,22 @@ import rateLimit from 'express-rate-limit';
 import { body, validationResult } from 'express-validator';
 import redis from '../config/redis.js';
 import authService from '../services/authService.js';
-import phoneVerificationService from '../services/productionPhoneService.js';
+import productionPhoneService from '../services/productionPhoneService.js';
+import authMiddleware from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
 // Fixed rate limiting - more reasonable limits
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per window (increased from too restrictive)
+  max: 5, // 5 attempts per window
   message: 'Too many authentication attempts, please try again in 15 minutes'
 });
 
 // Fixed verification rate limiting
 const verificationLimiter = rateLimit({
-  windowMs: 2 * 60 * 1000, // 2 minutes (reduced from 20 minutes)
-  max: 2, // 2 codes per 2 minutes (increased from 1 per 20 minutes)
+  windowMs: 2 * 60 * 1000, // 2 minutes
+  max: 2, // 2 codes per 2 minutes
   message: 'Please wait 2 minutes before requesting another verification code'
 });
 
@@ -32,7 +33,34 @@ async function ensureRedisConnection() {
   }
 }
 
-// Send verification code with proper error handling
+// NEW: Health check endpoint (this was missing)
+router.get('/health', async (req, res) => {
+  try {
+    const healthStatus = await productionPhoneService.healthCheck();
+    const redisHealthy = await redis.ping().then(() => true).catch(() => false);
+    
+    res.json({
+      success: true,
+      services: {
+        firebase: healthStatus.services.firebase,
+        firebaseSms: healthStatus.services.firebaseSms,
+        agora: healthStatus.services.agora,
+        redis: redisHealthy
+      },
+      healthy: healthStatus.healthy && redisHealthy,
+      warnings: healthStatus.warnings,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Health check failed',
+      error: error.message
+    });
+  }
+});
+
+// Send verification code with Firebase Auth
 router.post('/verify-phone',
   verificationLimiter,
   [
@@ -62,19 +90,39 @@ router.post('/verify-phone',
       const { phoneNumber } = req.body;
       const normalizedPhone = authService.normalizePhoneNumber(phoneNumber);
       
-      const result = await phoneVerificationService.sendVerificationCode(normalizedPhone);
+      // Send verification code via Firebase (or fallback)
+      const result = await productionPhoneService.sendVerificationCode(normalizedPhone);
       
-      res.json({
-        success: true,
-        message: result.message,
-        data: {
-          phoneNumber: normalizedPhone,
-          expiresIn: 600,
-          ...(process.env.NODE_ENV === 'development' && result.data?._testCode && { 
-            _testCode: result.data._testCode 
-          })
+      if (result.success) {
+        // Store session info temporarily for verification step (if Firebase)
+        if (result.data && result.data.sessionInfo) {
+          await redis.setEx(
+            `firebase_session:${normalizedPhone}`, 
+            600, // 10 minutes
+            result.data.sessionInfo
+          );
         }
-      });
+
+        res.json({
+          success: true,
+          message: result.message,
+          data: {
+            phoneNumber: normalizedPhone,
+            expiresIn: 600,
+            provider: result.provider,
+            // Include test code in development
+            ...(process.env.NODE_ENV === 'development' && result.data?._testCode && { 
+              _testCode: result.data._testCode 
+            })
+          }
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: 'Failed to send verification code',
+          error: result.message || 'Unknown error'
+        });
+      }
     } catch (error) {
       console.error('Phone verification error:', error);
       
@@ -131,8 +179,15 @@ router.post('/login',
       const { phoneNumber, verificationCode, displayName } = req.body;
       const normalizedPhone = authService.normalizePhoneNumber(phoneNumber);
       
-      // Verify the code first
-      const verificationResult = await phoneVerificationService.verifyCode(normalizedPhone, verificationCode);
+      // Try to get Firebase session info first
+      const sessionInfo = await redis.get(`firebase_session:${normalizedPhone}`);
+      
+      // Verify the code (Firebase or fallback)
+      const verificationResult = await productionPhoneService.verifyCode(
+        normalizedPhone, 
+        verificationCode, 
+        sessionInfo
+      );
       
       if (!verificationResult.success) {
         return res.status(400).json({
@@ -142,11 +197,19 @@ router.post('/login',
         });
       }
       
+      // Clean up session if it existed
+      if (sessionInfo) {
+        await redis.del(`firebase_session:${normalizedPhone}`);
+      }
+      
       // Code is valid, proceed with login/registration
       let user = await authService.getUserByPhone(normalizedPhone);
       
       if (!user) {
         user = await authService.createUser(normalizedPhone, displayName);
+        console.log(`👤 New user created: ${user.id} (${normalizedPhone})`);
+      } else {
+        console.log(`👤 Existing user login: ${user.id} (${normalizedPhone})`);
       }
       
       const token = await authService.generateToken(user.id);
@@ -159,16 +222,27 @@ router.post('/login',
         // Continue without storing in Redis - not critical for immediate auth
       }
       
+      const responseData = {
+        user: {
+          id: user.id,
+          phoneNumber: user.phone_number,
+          displayName: user.display_name
+        },
+        token
+      };
+
+      // Add Firebase data if available
+      if (verificationResult.firebaseUid) {
+        responseData.firebase = {
+          uid: verificationResult.firebaseUid,
+          idToken: verificationResult.idToken,
+          refreshToken: verificationResult.refreshToken
+        };
+      }
+      
       res.json({
         success: true,
-        data: {
-          user: {
-            id: user.id,
-            phoneNumber: user.phone_number,
-            displayName: user.display_name
-          },
-          token
-        }
+        data: responseData
       });
     } catch (error) {
       console.error('Login error:', error);
@@ -216,11 +290,85 @@ router.post('/logout', async (req, res) => {
   }
 });
 
+router.get('/profile', authMiddleware, async (req, res) => {
+  try {
+    // User data is already available from authMiddleware
+    const user = {
+      id: req.user.id,
+      phoneNumber: req.user.phone_number,
+      displayName: req.user.display_name,
+      createdAt: req.user.created_at,
+      lastLoginAt: req.user.last_login_at
+    };
+
+    res.json({
+      success: true,
+      data: { user }
+    });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch profile',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
+
+// Update user profile - requires authentication  
+router.patch('/profile', 
+  authMiddleware,
+  [
+    body('displayName').optional().isLength({ min: 1, max: 100 }).withMessage('Display name must be 1-100 characters')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+      }
+
+      const { displayName } = req.body;
+      
+      if (displayName) {
+        const updatedUser = await authService.updateUser(req.user.id, { display_name: displayName });
+        
+        res.json({
+          success: true,
+          data: {
+            user: {
+              id: updatedUser.id,
+              phoneNumber: updatedUser.phone_number,
+              displayName: updatedUser.display_name,
+              createdAt: updatedUser.created_at,
+              lastLoginAt: updatedUser.last_login_at
+            }
+          },
+          message: 'Profile updated successfully'
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          message: 'No valid fields provided for update'
+        });
+      }
+    } catch (error) {
+      console.error('Update profile error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update profile',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      });
+    }
+  }
+);
+
 // Test endpoint remains the same
 router.get('/test', (req, res) => {
   res.json({ 
     message: 'Auth routes working!', 
-    timestamp: new Date().toISOString() 
+    timestamp: new Date().toISOString(),
+    firebaseEnabled: productionPhoneService.smsEnabled
   });
 });
 
