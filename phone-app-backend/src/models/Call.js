@@ -1,41 +1,50 @@
-// src/models/Call.js
 import mongoose from 'mongoose';
 
 const callSchema = new mongoose.Schema({
-  caller_id: {
+  callId: {
     type: String,
     required: true,
-    ref: 'User'
+    unique: true,
+    index: true
   },
-  callee_id: {
+  fromUserId: {
     type: String,
     required: true,
-    ref: 'User'
+    ref: 'User',
+    index: true
   },
-  channel_name: {
+  toUserId: {
+    type: String,
+    ref: 'User',
+    index: true
+  },
+  toPhoneNumber: {
+    type: String,
+    required: true,
+    index: true
+  },
+  channelName: {
     type: String,
     required: true,
     unique: true
   },
-  call_type: {
+  callType: {
     type: String,
-    enum: ['audio', 'video'],
+    enum: ['voice', 'video'],
     required: true
   },
   status: {
     type: String,
-    enum: ['pending', 'connected', 'ended', 'missed', 'rejected'],
-    default: 'pending'
+    enum: ['initiated', 'ringing', 'active', 'ended', 'missed', 'rejected', 'failed'],
+    default: 'initiated',
+    index: true
   },
-  created_at: {
+  startTime: {
     type: Date,
-    default: Date.now
+    default: Date.now,
+    index: true
   },
-  connected_at: {
-    type: Date,
-    default: null
-  },
-  ended_at: {
+  endTime: {
     type: Date,
     default: null
   },
@@ -43,9 +52,16 @@ const callSchema = new mongoose.Schema({
     type: Number, // Duration in seconds
     default: null
   },
-  recording_url: {
-    type: String,
+  qualityScore: {
+    type: Number,
+    min: 1,
+    max: 5,
     default: null
+  },
+  connectionType: {
+    type: String,
+    enum: ['wifi', 'cellular', 'unknown', 'app'],
+    default: 'unknown'
   },
   metadata: {
     type: Map,
@@ -57,36 +73,83 @@ const callSchema = new mongoose.Schema({
 });
 
 // Indexes for better performance
-callSchema.index({ caller_id: 1, created_at: -1 });
-callSchema.index({ callee_id: 1, created_at: -1 });
-callSchema.index({ status: 1 });
-callSchema.index({ channel_name: 1 }, { unique: true });
+callSchema.index({ fromUserId: 1, startTime: -1 });
+callSchema.index({ toUserId: 1, startTime: -1 });
+callSchema.index({ status: 1, startTime: -1 });
+callSchema.index({ callId: 1 }, { unique: true });
 
 // Virtual for call participants
 callSchema.virtual('participants').get(function() {
-  return [this.caller_id, this.callee_id];
+  return [this.fromUserId, this.toUserId].filter(Boolean);
 });
 
 // Method to check if user is participant
 callSchema.methods.isParticipant = function(userId) {
-  return this.caller_id === userId || this.callee_id === userId;
+  return this.fromUserId === userId || this.toUserId === userId;
 };
 
 // Method to get other participant
 callSchema.methods.getOtherParticipant = function(userId) {
-  return this.caller_id === userId ? this.callee_id : this.caller_id;
+  return this.fromUserId === userId ? this.toUserId : this.fromUserId;
+};
+
+// Method to update call status with automatic field updates
+callSchema.methods.updateStatus = function(newStatus) {
+  this.status = newStatus;
+  
+  // Auto-set endTime if status indicates call is finished
+  if (['ended', 'rejected', 'missed', 'failed'].includes(newStatus) && !this.endTime) {
+    this.endTime = new Date();
+  }
+  
+  // Auto-set startTime if call becomes active
+  if (newStatus === 'active' && !this.connectedAt) {
+    this.connectedAt = new Date();
+  }
+  
+  // Calculate duration if call was connected and ended
+  if (newStatus === 'ended' && this.connectedAt && this.endTime && !this.duration) {
+    this.duration = Math.floor((this.endTime - this.connectedAt) / 1000);
+  }
+  
+  return this.save();
+};
+
+// Static method to find active calls for a user
+callSchema.statics.findActiveCalls = function(userId) {
+  return this.find({
+    $or: [
+      { fromUserId: userId },
+      { toUserId: userId }
+    ],
+    status: { $in: ['initiated', 'ringing', 'active'] }
+  }).sort({ startTime: -1 });
+};
+
+// Static method to find call history for a user
+callSchema.statics.findUserCallHistory = function(userId, page = 1, limit = 20) {
+  const skip = (page - 1) * limit;
+  return this.find({
+    $or: [
+      { fromUserId: userId },
+      { toUserId: userId }
+    ]
+  })
+    .sort({ startTime: -1 })
+    .skip(skip)
+    .limit(limit);
 };
 
 // Pre-save middleware
 callSchema.pre('save', function(next) {
-  // Auto-set ended_at if status is ended/rejected/missed and ended_at is not set
-  if (['ended', 'rejected', 'missed'].includes(this.status) && !this.ended_at) {
-    this.ended_at = new Date();
+  // Auto-set endTime if status is ended/rejected/missed and endTime is not set
+  if (['ended', 'rejected', 'missed', 'failed'].includes(this.status) && !this.endTime) {
+    this.endTime = new Date();
   }
   
   // Calculate duration if call was connected and ended
-  if (this.status === 'ended' && this.connected_at && this.ended_at && !this.duration) {
-    this.duration = Math.floor((this.ended_at - this.connected_at) / 1000);
+  if (this.status === 'ended' && this.connectedAt && this.endTime && !this.duration) {
+    this.duration = Math.floor((this.endTime - this.connectedAt) / 1000);
   }
   
   next();
